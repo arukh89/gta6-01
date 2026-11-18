@@ -1,124 +1,195 @@
-// The game's rules and state, with no drawing and no browser in it: the player's paddle, the
-// pool of falling blocks and coins, spawning, collisions, score, lives and level. step() advances
-// one fixed step and returns what happened as bit flags, so the caller can react without the
-// world knowing about screens or sound. Nothing here allocates after createWorld returns.
-import { BLOCK, COIN, FIELD, LEVEL, LIVES, PLAYER, POOL_SIZE } from './config.js';
+// The city of Solmaris: a road grid, blocks of buildings, a park, a neon
+// district, downtown towers, a beach promenade and a marina. Everything is
+// generated from the seeded stream, so the same seed builds the same streets.
+// Collision is circle-versus-building-footprint, checked block by block.
+import { PALETTE, WORLD } from './config.js';
 
-export const KIND_BLOCK = 0;
-export const KIND_COIN = 1;
-
-export const EVENT_HIT = 1;
-export const EVENT_COIN = 2;
-export const EVENT_OVER = 4;
-
-function overlaps(a, b) {
-  return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
+export function roadCentersX() {
+  const list = [];
+  for (let x = WORLD.firstRoad; x < WORLD.width; x += WORLD.roadGap) list.push(x);
+  return list;
 }
 
-export function createWorld(random) {
-  const player = { x: 0, y: FIELD.groundY - PLAYER.height, width: PLAYER.width, height: PLAYER.height, invulnerable: 0 };
-  const items = [];
-  for (let index = 0; index < POOL_SIZE; index += 1) {
-    items.push({ active: false, kind: KIND_BLOCK, x: 0, y: 0, width: 0, height: 0, speed: 0 });
-  }
-  const state = { player, items, score: 0, lives: LIVES, level: 1, elapsed: 0, blockTimer: 0, coinTimer: 0 };
+export function roadCentersY() {
+  const list = [];
+  for (let y = WORLD.firstRoad; y < WORLD.beachY - 120; y += WORLD.roadGap) list.push(y);
+  return list;
+}
 
-  function reset() {
-    player.x = (FIELD.width - player.width) / 2;
-    player.invulnerable = 0;
-    for (const item of items) item.active = false;
-    state.score = 0;
-    state.lives = LIVES;
-    state.level = 1;
-    state.elapsed = 0;
-    state.blockTimer = BLOCK.interval;
-    state.coinTimer = COIN.interval;
-  }
+function districtFor(col, row, cols) {
+  if (col >= 7 && row >= 1 && row <= 3) return 'downtown';
+  if (col <= 3 && row >= 4 && row <= 5) return 'neon';
+  if (row === 6) return 'beachfront';
+  if (col === cols - 1 && row >= 4) return 'marina';
+  return 'uptown';
+}
 
-  function freeItem() {
-    for (let index = 0; index < items.length; index += 1) if (!items[index].active) return items[index];
-    return null;
-  }
+export function buildCity(rng) {
+  const xs = roadCentersX();
+  const ys = roadCentersY();
+  const half = WORLD.roadWidth / 2;
+  const blocks = [];
+  const buildings = [];
+  const trees = [];
+  const lamps = [];
+  const boats = [];
+  const umbrellas = [];
 
-  function spawnBlock() {
-    const item = freeItem();
-    if (item === null) return;
-    item.active = true;
-    item.kind = KIND_BLOCK;
-    item.width = BLOCK.minWidth + random() * (BLOCK.maxWidth - BLOCK.minWidth);
-    item.height = BLOCK.height;
-    item.x = random() * (FIELD.width - item.width);
-    item.y = -item.height;
-    item.speed = BLOCK.speed + BLOCK.speedPerLevel * (state.level - 1) + random() * BLOCK.speedJitter;
-  }
+  const colEdges = [24, ...xs.map((x) => x + half), WORLD.width - 24];
+  const colStarts = [24, ...xs.map((x) => x + half)];
+  const colEnds = [...xs.map((x) => x - half), WORLD.width - 24];
+  const rowStarts = [24, ...ys.map((y) => y + half)];
+  const rowEnds = [...ys.map((y) => y - half), WORLD.beachY - 40];
+  void colEdges;
 
-  function spawnCoin() {
-    const item = freeItem();
-    if (item === null) return;
-    item.active = true;
-    item.kind = KIND_COIN;
-    item.width = COIN.size;
-    item.height = COIN.size;
-    item.x = random() * (FIELD.width - item.width);
-    item.y = -item.height;
-    item.speed = COIN.speed + COIN.speedPerLevel * (state.level - 1);
-  }
-
-  function blockInterval() {
-    return Math.max(BLOCK.minInterval, BLOCK.interval * BLOCK.intervalScale ** (state.level - 1));
-  }
-
-  /**
-   * One fixed step. `direction` is -1, 0 or 1 (left, still, right). With `harmless` set (the title
-   * screen's backdrop) things fall but nothing touches the player and nothing scores.
-   */
-  function step(dt, direction, harmless) {
-    let events = 0;
-    state.elapsed += dt;
-    state.level = Math.min(LEVEL.max, 1 + Math.floor(state.elapsed / LEVEL.seconds));
-
-    player.x = Math.min(FIELD.width - player.width, Math.max(0, player.x + direction * PLAYER.speed * dt));
-    if (player.invulnerable > 0) player.invulnerable = Math.max(0, player.invulnerable - dt);
-
-    state.blockTimer -= dt;
-    if (state.blockTimer <= 0) {
-      spawnBlock();
-      state.blockTimer += blockInterval();
-    }
-    state.coinTimer -= dt;
-    if (state.coinTimer <= 0) {
-      spawnCoin();
-      state.coinTimer += COIN.interval + random() * COIN.intervalJitter;
-    }
-
-    for (let index = 0; index < items.length; index += 1) {
-      const item = items[index];
-      if (!item.active) continue;
-      item.y += item.speed * dt;
-      if (item.y > FIELD.groundY) {
-        item.active = false;
-        if (item.kind === KIND_BLOCK && !harmless) state.score += BLOCK.dodgePoints;
+  const parkCol = 4;
+  const parkRow = 3;
+  for (let row = 0; row < rowStarts.length; row += 1) {
+    for (let col = 0; col < colStarts.length; col += 1) {
+      const bx = colStarts[col];
+      const by = rowStarts[row];
+      const bw = colEnds[col] - bx;
+      const bh = rowEnds[row] - by;
+      const district = districtFor(col, row, colStarts.length);
+      const block = { x: bx, y: by, w: bw, h: bh, district, buildings: [], park: col === parkCol && row === parkRow };
+      blocks.push(block);
+      if (block.park) {
+        for (let i = 0; i < 16; i += 1) {
+          trees.push({ x: bx + rng.range(24, bw - 24), y: by + rng.range(24, bh - 24), r: rng.range(10, 16), palm: false });
+        }
         continue;
       }
-      if (harmless || !overlaps(item, player)) continue;
-      if (item.kind === KIND_COIN) {
-        item.active = false;
-        state.score += COIN.points;
-        events |= EVENT_COIN;
-      } else if (player.invulnerable === 0) {
-        item.active = false;
-        state.lives -= 1;
-        player.invulnerable = PLAYER.invulnerable;
-        events |= EVENT_HIT;
-        if (state.lives === 0) {
-          events |= EVENT_OVER;
-          break;
-        }
+      if (district === 'marina') {
+        boats.push({ x: bx + bw * 0.3, y: by + bh * 0.5, angle: 0.4 });
+        boats.push({ x: bx + bw * 0.7, y: by + bh * 0.3, angle: -0.3 });
+        continue;
+      }
+      const count = district === 'downtown' ? 1 : rng.int(2, 5);
+      const pad = 14;
+      for (let i = 0; i < count; i += 1) {
+        const cols = count === 1 ? 1 : 2;
+        const rows = count <= 2 ? 1 : 2;
+        const cellW = (bw - pad * 2) / cols;
+        const cellH = (bh - pad * 2) / rows;
+        const cx = bx + pad + (i % cols) * cellW;
+        const cy = by + pad + Math.floor(i / cols) * cellH;
+        const w = cellW * rng.range(0.62, 0.86);
+        const h = cellH * rng.range(0.62, 0.86);
+        const tall = district === 'downtown';
+        const building = {
+          x: cx + (cellW - w) / 2,
+          y: cy + (cellH - h) / 2,
+          w,
+          h,
+          height: tall ? rng.range(46, 88) : rng.range(14, 34),
+          color: tall ? rng.pick(PALETTE.tower) : rng.pick(PALETTE.building),
+          sign: district === 'neon' ? rng.pick(['#ff5d8f', '#00f5d4', '#fee440', '#9b5de5']) : null,
+          district,
+        };
+        block.buildings.push(building);
+        buildings.push(building);
+      }
+      if (district === 'beachfront') {
+        umbrellas.push({ x: bx + bw * 0.5, y: by + bh + 44, color: rng.pick(['#ff5d8f', '#fee440', '#00f5d4']) });
       }
     }
-    return events;
   }
 
-  reset();
-  return { state, reset, step };
+  for (const x of xs) {
+    for (const y of ys) lamps.push({ x: x + half + 6, y: y + half + 6 });
+  }
+  for (let x = 200; x < WORLD.width - 100; x += 170) {
+    trees.push({ x: x + rng.range(-20, 20), y: WORLD.beachY + 30, r: 12, palm: true });
+  }
+
+  const cashDrops = [];
+  for (let i = 0; i < 12; i += 1) {
+    const block = blocks[rng.int(0, blocks.length)];
+    cashDrops.push({ x: block.x - 20, y: block.y + block.h / 2, taken: false, value: 25 });
+  }
+
+  return {
+    xs,
+    ys,
+    blocks,
+    buildings,
+    trees,
+    lamps,
+    boats,
+    umbrellas,
+    cashDrops,
+    paintShop: { x: 800, y: 480, name: 'Spray Barn' },
+    safehouse: { x: 2560, y: 1440, name: 'Safehouse' },
+    clinic: { x: 1600, y: 480, name: 'Solmaris Clinic' },
+    garage: { x: 1120, y: 1440, name: "Dario's Garage" },
+    marina: { x: 2960, y: 1760, name: 'Marina Deal' },
+    lighthouse: { x: 170, y: 2100, name: 'Old Lighthouse' },
+    spawn: { x: 480, y: 400 },
+    taxiStands: [
+      { x: 480, y: 160 },
+      { x: 2080, y: 800 },
+      { x: 800, y: 1760 },
+      { x: 2720, y: 480 },
+    ],
+  };
+}
+
+/** True when the point sits on a road band (either direction). */
+export function isOnRoad(city, x, y) {
+  const half = WORLD.roadWidth / 2;
+  for (const rx of city.xs) if (Math.abs(x - rx) <= half) return true;
+  for (const ry of city.ys) if (Math.abs(y - ry) <= half) return true;
+  return false;
+}
+
+/** Push a circle out of every building footprint it overlaps. Returns [x, y]. */
+export function resolveBuildingCollision(city, x, y, radius) {
+  let px = x;
+  let py = y;
+  for (const b of city.buildings) {
+    if (px + radius < b.x || px - radius > b.x + b.w || py + radius < b.y || py - radius > b.y + b.h) continue;
+    const cx = Math.max(b.x, Math.min(px, b.x + b.w));
+    const cy = Math.max(b.y, Math.min(py, b.y + b.h));
+    let dx = px - cx;
+    let dy = py - cy;
+    const dist = Math.hypot(dx, dy);
+    if (dist === 0) {
+      dy = -1;
+      dx = 0;
+    } else {
+      dx /= dist;
+      dy /= dist;
+    }
+    const push = radius - dist;
+    if (push > 0) {
+      px += dx * push;
+      py += dy * push;
+    }
+  }
+  px = Math.max(radius, Math.min(WORLD.width - radius, px));
+  py = Math.max(radius, Math.min(WORLD.height - radius, py));
+  return [px, py];
+}
+
+/** A random point on a road, for spawning traffic and police. */
+export function randomRoadPoint(city, rng) {
+  if (rng.chance(0.5)) {
+    return { x: rng.pick(city.xs), y: rng.range(80, WORLD.beachY - 80) };
+  }
+  return { x: rng.range(80, WORLD.width - 80), y: rng.pick(city.ys) };
+}
+
+export function districtNameAt(city, x, y) {
+  for (const block of city.blocks) {
+    if (x >= block.x - 40 && x <= block.x + block.w + 40 && y >= block.y - 40 && y <= block.y + block.h + 40) {
+      if (block.park) return 'Palma Park';
+      if (block.district === 'downtown') return 'Downtown Solmaris';
+      if (block.district === 'neon') return 'Neon Row';
+      if (block.district === 'beachfront') return 'Solmaris Beach';
+      if (block.district === 'marina') return 'The Marina';
+      return 'Uptown';
+    }
+  }
+  if (y >= WORLD.beachY) return 'Solmaris Beach';
+  return 'Solmaris';
 }

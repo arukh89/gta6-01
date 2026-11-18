@@ -1,53 +1,104 @@
-// Keyboard and pointer input. Held keys give a steering direction; one-shot presses (start or
-// restart, pause) are queued as bit flags and taken once by the loop, so a press between two
-// frames is never lost and never counted twice.
+// Keyboard and mouse for Solmaris: held movement keys, one-shot action flags
+// (taken once, never lost between frames), the aim point in screen space, and
+// click-to-attack. Buttons in the DOM overlays handle menus; this file only
+// feeds the simulation.
 
-export const ACTION_CONFIRM = 1;
-export const ACTION_PAUSE = 2;
+export const ACT = {
+  ENTER_CAR: 1,
+  PAUSE: 2,
+  MUTE: 4,
+  RELOAD: 8,
+  WEAPON_FISTS: 16,
+  WEAPON_PISTOL: 32,
+};
 
-const LEFT = new Set(['ArrowLeft', 'KeyA']);
-const RIGHT = new Set(['ArrowRight', 'KeyD']);
-const CONFIRM = new Set(['Space', 'Enter']);
-const PAUSE = new Set(['KeyP', 'Escape']);
+const UP = new Set(['KeyW', 'ArrowUp']);
+const DOWN = new Set(['KeyS', 'ArrowDown']);
+const LEFT = new Set(['KeyA', 'ArrowLeft']);
+const RIGHT = new Set(['KeyD', 'ArrowRight']);
 
-export function createInput(target) {
-  let left = false;
-  let right = false;
+export function createInput(canvas) {
+  const held = new Set();
   let actions = 0;
+  let mouseX = 0;
+  let mouseY = 0;
+  let firing = false;
 
-  window.addEventListener('keydown', (event) => {
-    if (LEFT.has(event.code)) left = true;
-    else if (RIGHT.has(event.code)) right = true;
-    else if (CONFIRM.has(event.code)) {
-      if (!event.repeat) actions |= ACTION_CONFIRM;
-    } else if (PAUSE.has(event.code)) {
-      if (!event.repeat) actions |= ACTION_PAUSE;
-    } else return;
-    event.preventDefault();
+  function onKeyDown(event) {
+    if (event.repeat) return;
+    held.add(event.code);
+    if (event.code === 'KeyE') actions |= ACT.ENTER_CAR;
+    else if (event.code === 'KeyP' || event.code === 'Escape') actions |= ACT.PAUSE;
+    else if (event.code === 'KeyM') actions |= ACT.MUTE;
+    else if (event.code === 'KeyR') actions |= ACT.RELOAD;
+    else if (event.code === 'Digit1') actions |= ACT.WEAPON_FISTS;
+    else if (event.code === 'Digit2') actions |= ACT.WEAPON_PISTOL;
+    if (UP.has(event.code) || DOWN.has(event.code) || LEFT.has(event.code) || RIGHT.has(event.code) || event.code === 'Space') {
+      event.preventDefault();
+    }
+  }
+  function onKeyUp(event) {
+    held.delete(event.code);
+  }
+  window.addEventListener('keydown', onKeyDown);
+  window.addEventListener('keyup', onKeyUp);
+  window.addEventListener('blur', () => held.clear());
+  canvas.addEventListener('pointermove', (event) => {
+    mouseX = event.clientX;
+    mouseY = event.clientY;
   });
-  window.addEventListener('keyup', (event) => {
-    if (LEFT.has(event.code)) left = false;
-    else if (RIGHT.has(event.code)) right = false;
+  canvas.addEventListener('pointerdown', (event) => {
+    mouseX = event.clientX;
+    mouseY = event.clientY;
+    if (event.button === 0) firing = true;
   });
-  // A key released while the tab is hidden never sends keyup: let go of everything on blur.
-  window.addEventListener('blur', () => {
-    left = false;
-    right = false;
+  window.addEventListener('pointerup', () => {
+    firing = false;
   });
-  target.addEventListener('pointerdown', () => {
-    actions |= ACTION_CONFIRM;
-  });
+
+  function axis(neg, pos) {
+    return (held.has(pos) ? 1 : 0) - (held.has(neg) ? 1 : 0);
+  }
 
   return {
-    /** -1 for left, 1 for right, 0 for neither or both. */
-    direction() {
-      return (right ? 1 : 0) - (left ? 1 : 0);
+    /** -1..1 steering / strafe: left negative, right positive. */
+    steer() {
+      let value = 0;
+      for (const code of LEFT) if (held.has(code)) value -= 1;
+      for (const code of RIGHT) if (held.has(code)) value += 1;
+      return Math.max(-1, Math.min(1, value));
     },
-    /** The one-shot presses since the last call, as ACTION_* flags. */
+    /** -1..1 throttle: forward positive, brake/reverse negative. */
+    throttle() {
+      let value = 0;
+      for (const code of UP) if (held.has(code)) value += 1;
+      for (const code of DOWN) if (held.has(code)) value -= 1;
+      return Math.max(-1, Math.min(1, value));
+    },
+    sprint() {
+      return held.has('ShiftLeft') || held.has('ShiftRight');
+    },
+    mouse() {
+      return { x: mouseX, y: mouseY };
+    },
+    isFiring() {
+      return firing;
+    },
     takeActions() {
       const taken = actions;
       actions = 0;
       return taken;
+    },
+    /** Scripted input for screenshot staging: drive forward, no keys needed. */
+    script(throttleValue, steerValue) {
+      return {
+        steer: () => steerValue,
+        throttle: () => throttleValue,
+        sprint: () => false,
+        mouse: () => ({ x: mouseX, y: mouseY }),
+        isFiring: () => false,
+        takeActions: () => 0,
+      };
     },
   };
 }

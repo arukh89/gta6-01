@@ -3,17 +3,87 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Block Dodger</title>
-<style>
-  html, body { margin: 0; height: 100%; overflow: hidden; background: #11141b; }
-  #game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
-  /* Read aloud, never shown: the status line screen readers announce. */
-  #status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-</style>
+<title>Solmaris Heat — Open-World Crime Game</title>
+<link rel="stylesheet" href="./style.css">
 </head>
 <body>
-<canvas id="game" aria-label="Block Dodger: move the paddle left and right to dodge falling blocks and catch coins"></canvas>
+<canvas id="game" aria-label="Solmaris Heat: explore the city of Solmaris on foot and by car, take missions, and dodge the police"></canvas>
+
+<div id="hud" class="hidden" aria-hidden="true">
+  <div id="hud-left">
+    <div id="wanted" title="Wanted level"></div>
+    <div id="healthbar"><div id="healthfill"></div><span id="healthtext"></span></div>
+    <div id="money">$0</div>
+    <div id="respect"></div>
+  </div>
+  <div id="objective"><span id="objective-label">MISSION</span><span id="objective-text"></span></div>
+  <div id="hud-right">
+    <canvas id="minimap" width="188" height="188"></canvas>
+    <div id="clock">16:40</div>
+  </div>
+  <div id="driveinfo" class="hidden"><span id="speed">0</span><span class="unit">km/h</span><span id="carname"></span></div>
+  <div id="weaponinfo"><span id="weaponname">Fists</span><span id="ammo"></span></div>
+  <div id="prompt" class="hidden"></div>
+  <div id="toast" class="hidden"></div>
+  <div id="hint">WASD move / drive · E enter car · Click shoot · 1/2 weapons · Shift sprint · P pause · M sound</div>
+</div>
+
+<div id="title" class="overlay">
+  <div class="panel">
+    <p class="kicker">AN ORIGINAL OPEN-WORLD CRIME GAME</p>
+    <h1>SOLMARIS<br><span>HEAT</span></h1>
+    <p class="story">Golden hour in Solmaris. Lena Cruz owes Dario one last favour, the whole city is awake, and every car on the street is a way out. Take the jobs, keep the heat off, and make the bay yours.</p>
+    <div class="buttons">
+      <button id="btn-new" type="button">New game</button>
+      <button id="btn-continue" type="button" class="hidden">Continue</button>
+      <button id="btn-help" type="button">How to play</button>
+    </div>
+    <p class="controls">WASD / arrows — walk and drive · Mouse — aim · Click — shoot / punch · E — steal or enter a car · Shift — sprint / handbrake · 1 fists, 2 pistol · P pause · M sound · Progress saves automatically.</p>
+    <p class="fine">Every name, character, street and sound in this game is original. No assets from any commercial game.</p>
+  </div>
+</div>
+
+<div id="help" class="overlay hidden">
+  <div class="panel">
+    <h2>How to play</h2>
+    <p>Follow the gold marker on the minimap to work through six story jobs for Dario, from a first errand to the Heatwave finale. Between jobs, take taxi fares at the blue markers, grab cash drops, and explore Solmaris on foot or in any car you can reach.</p>
+    <p>Crime raises your wanted stars. Police cars chase you and officers come on foot. Break line of sight and stay hidden to cool down, or pay $150 at the Spray Barn to wipe the slate clean. Getting busted costs you $200 and your heat; running out of health sends you to the clinic and costs $150.</p>
+    <p class="controls">WASD walk / drive · E enter or leave a car · Click attack · 1 / 2 switch weapon · R reload · Shift sprint / handbrake · P pause · M mute · Your game saves when a job ends and from the pause menu.</p>
+    <div class="buttons"><button id="btn-help-back" type="button">Back</button></div>
+  </div>
+</div>
+
+<div id="pause" class="overlay hidden">
+  <div class="panel">
+    <h2>Paused</h2>
+    <p id="pause-stats"></p>
+    <div class="buttons">
+      <button id="btn-resume" type="button">Resume</button>
+      <button id="btn-save" type="button">Save game</button>
+      <button id="btn-quit" type="button">Save &amp; title screen</button>
+    </div>
+  </div>
+</div>
+
+<div id="over" class="overlay hidden">
+  <div class="panel">
+    <h2 id="over-title">Busted</h2>
+    <p id="over-text"></p>
+    <div class="buttons"><button id="btn-again" type="button">Back on the street</button></div>
+  </div>
+</div>
+
+<div id="brief" class="overlay hidden">
+  <div class="panel">
+    <p class="kicker" id="brief-kicker">JOB 1 OF 6</p>
+    <h2 id="brief-title"></h2>
+    <p id="brief-text"></p>
+    <div class="buttons"><button id="btn-brief" type="button">Let's go</button></div>
+  </div>
+</div>
+
 <p id="status" role="status" aria-live="polite"></p>
+<script type="importmap">{"imports":{"three":"./vendor/three.module.min.js"}}</script>
 <script type="module" src="./src/main.js"></script>
 </body>
 </html>

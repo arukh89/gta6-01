@@ -1,61 +1,61 @@
-// Every tuning number and colour in one place. The playfield is a fixed 1280x720 logical area;
-// the renderer scales it to the window, so no rule below depends on the screen size.
+// Solmaris Heat tuning: one place for the city size, movement, police heat,
+// mission money and the sun-soaked palette. Nothing here depends on screen size.
 
-export const FIELD = { width: 1280, height: 720, groundY: 664 };
-
-/** The simulation's fixed step, in seconds: 60 updates a second whatever the display's rate. */
+/** Fixed simulation step: 60 updates a second whatever the display rate. */
 export const STEP = 1 / 60;
 
-export const PLAYER = {
-  width: 72,
-  height: 24,
-  speed: 560,
-  invulnerable: 1.5,
+export const WORLD = {
+  width: 3200,
+  height: 2400,
+  roadGap: 320,
+  roadWidth: 64,
+  firstRoad: 160,
+  beachY: 2080,
+  waterY: 2240,
 };
 
-export const LIVES = 3;
+export const SAVE_KEY = 'solmaris-heat.save.v1';
 
-export const BLOCK = {
-  minWidth: 40,
-  maxWidth: 110,
-  height: 36,
-  speed: 240,
-  speedPerLevel: 30,
-  speedJitter: 90,
-  interval: 0.55,
-  intervalScale: 0.88,
-  minInterval: 0.14,
-  dodgePoints: 1,
+export const WALK = { speed: 175, sprint: 265, radius: 13 };
+export const DRIVE = { accel: 420, brake: 620, reverse: 160, maxSpeed: 520, turn: 2.6, grip: 3.2 };
+export const HEALTH = { max: 100, regenDelay: 6, regenRate: 4, bustFine: 200, clinicFine: 150 };
+export const WANTED = { max: 5, coolSeconds: 9, sprayCost: 150, sprayRadius: 90 };
+
+export const VEHICLES = {
+  sedan: { name: 'Coral Sedan', length: 46, width: 22, top: 430, accel: 380, color: '#e76f51' },
+  taxi: { name: 'Bay Cab', length: 46, width: 22, top: 410, accel: 360, color: '#ffb703' },
+  pickup: { name: 'Dune Pickup', length: 50, width: 23, top: 400, accel: 340, color: '#8ab17d' },
+  sports: { name: 'Vela GT', length: 48, width: 22, top: 560, accel: 520, color: '#e63946' },
+  van: { name: 'Harbor Van', length: 54, width: 24, top: 360, accel: 300, color: '#a8dadc' },
+  police: { name: 'Solmaris PD Cruiser', length: 48, width: 22, top: 500, accel: 470, color: '#1d3557' },
 };
 
-export const COIN = {
-  size: 24,
-  speed: 190,
-  speedPerLevel: 14,
-  interval: 1.4,
-  intervalJitter: 0.8,
-  points: 10,
+export const WEAPONS = {
+  fists: { name: 'Fists', damage: 12, range: 34, rate: 0.38, ammo: Infinity },
+  pistol: { name: 'Pistol', damage: 26, range: 420, rate: 0.3, ammo: 48, mag: 12 },
 };
-
-/** Seconds of play per level, and the last level: speeds and spawn rates stop growing there. */
-export const LEVEL = { seconds: 12, max: 12 };
-
-/** How many falling things can exist at once; the pool is allocated once, at boot. */
-export const POOL_SIZE = 64;
 
 export const PALETTE = {
-  backdrop: '#11141b',
-  sky: '#1b1f2a',
-  ground: '#2a3040',
-  player: '#4fc3f7',
-  block: '#e5534b',
-  coin: '#f2c94c',
-  panel: '#252b38',
-  text: '#eef1f5',
-  muted: '#8b93a3',
+  grass: '#7fb069',
+  park: '#6aa84f',
+  sand: '#f2d492',
+  water: '#219ebc',
+  deepWater: '#126782',
+  asphalt: '#4a4a52',
+  asphaltLine: '#e9c46a',
+  sidewalk: '#d9c7a7',
+  building: ['#f4a261', '#e9c46a', '#ee8959', '#f7d6a0', '#e76f51', '#f2e8cf'],
+  tower: ['#8ecae6', '#a8dadc', '#90be6d', '#f9c74f'],
+  roof: '#b08968',
+  shadow: 'rgba(60, 20, 0, 0.25)',
+  duskTint: 'rgba(251, 133, 0, 0.24)',
+  dayTint: 'rgba(255, 214, 130, 0.10)',
 };
 
-export const FONT = 'system-ui, -apple-system, "Segoe UI", sans-serif';
+export const FONT = '"Avenir Next", "Segoe UI", system-ui, sans-serif';
 
-/** Where the best score is kept between visits (this browser only). */
-export const BEST_KEY = 'block-dodger.best';
+/** Street names for flavour on the HUD and in mission text. All invented. */
+export const STREETS = [
+  'Palma Avenue', 'Coral Boulevard', 'Sunset Row', 'Marina Drive', 'Cielo Street',
+  'Mango Lane', 'Harbor Way', 'Flamingo Road', 'Sol Street', 'Bayview Terrace',
+];
