@@ -5,7 +5,26 @@
 // ?seed=N fixes the city. ?shot=chase|foot|start|map (with &seed=N) stages
 // that scene instead of running the loop, paints it, updates the HUD, and
 // sets window.__shotReady for a screenshot.
-import { HEALTH, STEP, WANTED, CHARACTERS, characterById, repTitle, skillLevel } from './config.js';
+//
+// Systems index — where each brief feature lives (25 files):
+//   city on foot + by car .... player.js (walk, sprint, drive, enter/exit)
+//   traffic + pedestrians .... traffic.js (road cars, parked cars to steal)
+//                              pedestrians.js (strollers, named locals, cops)
+//   cars to steal ............ player.js (tryEnterOrExitCar) + shops.js (sell)
+//   wanted + police .......... police.js (stars, cruisers, heli, SWAT, blocks)
+//   missions + story ......... missions.js (9 story jobs, taxi, race, crew)
+//   combat ................... combat.js (fists/pistol/SMG) + wheel.js (Tab)
+//   HUD + minimap ............ hud.js (stars, health, map, wheel) + input.js
+//   start + save ............. save.js (localStorage v2) + characters.js (crew)
+//   polish ................... audio.js (synth sound + radio) + effects.js
+//                              render.js (2D) + render3d.js (3D) + world.js
+//                              (city, river, Coral Bridge, props)
+//   shops + minigames ........ shops.js (Cielo Arms) + minigames.js (darts,
+//                              range) + shots.js (screenshot staging)
+//   step + tuning ............ update.js (one fixed step) + config.js
+//                              + random.js (seeded city/play streams)
+//   screens + styling ........ index.html + style.css (this file boots them)
+import { HEALTH, STEP, WANTED, WEAPONS, CHARACTERS, characterById, repTitle, skillLevel } from './config.js';
 import { createSeededRandom } from './random.js';
 import { createGameState, stepGame } from './update.js';
 import { ACT, createInput } from './input.js';
@@ -22,6 +41,7 @@ import { SELL_VALUES, SHOP_ITEMS, buyItem, eatSnack, sellCar, shopItemState } fr
 import { createMinigameState, quitMinigame, startDarts, startRange } from './minigames.js';
 import { applySave, hasSave, readSave, writeSave } from './save.js';
 import { loadRecordToLive, nextCharacterId, switchCharacter } from './characters.js';
+import { WHEEL_SLOTS, wheelClose, wheelCycle, wheelOpen, wheelSelectByAngle } from './wheel.js';
 import { stageShot } from './shots.js';
 
 const MAX_FRAME = 0.25;
@@ -223,6 +243,10 @@ function endRun(kind) {
 }
 
 const screenRef = { current: 'title' };
+
+// Arrow-key edge for the weapon wheel: the last frame's steer/throttle
+// direction, so one press cycles one slot while Tab is held.
+let wheelArrowPrev = 0;
 
 function respawn() {
   const player = state.player;
@@ -463,6 +487,7 @@ function runGame() {
     steer: () => 0,
     throttle: () => 0,
     sprint: () => false,
+    wheelHeld: () => false,
     mouse: () => ({ x: 0, y: 0 }),
     isFiring: () => false,
     takeActions: () => 0,
@@ -647,6 +672,30 @@ function runGame() {
       }
     }
     if (screenRef.current === 'play') {
+      // Weapon wheel (hold Tab): the radial selector over the action. The
+      // game keeps running while it is open — the wheel only picks a
+      // weapon, it never pauses the world. Mouse points at a segment
+      // (the wheel is centred on screen); arrow keys cycle it instead.
+      // Releasing Tab equips the pick, or keeps the weapon in hand when
+      // nothing was picked or the pick is locked.
+      const wheel = state.wheel;
+      const wheelHeld = !!(input.wheelHeld && input.wheelHeld());
+      if (wheelHeld && !wheel.open) wheelOpen(state);
+      if (wheel.open) {
+        const m = input.mouse();
+        wheelSelectByAngle(state, m.x - window.innerWidth / 2, m.y - window.innerHeight / 2);
+        const steer = input.steer();
+        const throttle = input.throttle();
+        const arrow = steer !== 0 ? steer : (throttle !== 0 ? -throttle : 0);
+        if (arrow !== 0 && wheelArrowPrev === 0) wheelCycle(state, arrow);
+        wheelArrowPrev = arrow;
+        if (!wheelHeld) {
+          const done = wheelClose(state);
+          if (done && done.locked) hud.toast(`You don't own the ${WEAPONS[done.locked].name} yet — buy it at Cielo Arms.`, 2.5);
+        }
+      } else {
+        wheelArrowPrev = 0;
+      }
       if (actions & ACT.ENTER_CAR) {
         const ev = [];
         const player = state.player;
@@ -708,6 +757,12 @@ function runGame() {
       if (actions & ACT.WEAPON_FISTS) state.player.weapon = 'fists';
       if (actions & ACT.WEAPON_PISTOL) state.player.weapon = 'pistol';
       if (actions & ACT.WEAPON_SMG && state.player.weapons.includes('smg')) state.player.weapon = 'smg';
+      // The Digit keys still switch directly: if the wheel is open, its
+      // highlight follows the weapon in hand, so the paint never lies.
+      if (state.wheel.open) {
+        const at = WHEEL_SLOTS.indexOf(state.player.weapon);
+        if (at >= 0) state.wheel.selected = at;
+      }
       while (accumulator >= STEP) {
         const events = stepGame(state, input, STEP, toWorld);
         handleEvents(events, screenRef);

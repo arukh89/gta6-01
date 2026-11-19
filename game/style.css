@@ -57,6 +57,12 @@ body { font-family: "Avenir Next", "Segoe UI", system-ui, sans-serif; color: var
 #objective-text { font-size: 16px; font-weight: 700; }
 #hud-right { position: absolute; top: 14px; right: 16px; text-align: right; }
 #minimap { border: 3px solid rgba(255, 255, 255, 0.85); border-radius: 50%; box-shadow: 0 4px 18px rgba(0, 0, 0, 0.4); background: #e9c46a; }
+
+/* Weapon wheel (hold Tab): a radial selector centred over the action. The
+   HUD never takes pointer events, so the wheel is paint-only — the mouse
+   position picks the segment, Tab's release equips it. */
+#wheel { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); pointer-events: none; }
+#wheelcanvas { display: block; filter: drop-shadow(0 6px 22px rgba(0, 0, 0, 0.5)); }
 #clock { font-size: 20px; font-weight: 800; margin-top: 4px; }
 #driveinfo { position: absolute; right: 16px; bottom: 54px; font-size: 30px; font-weight: 800; text-align: right; }
 #driveinfo .unit { font-size: 14px; margin-left: 4px; }

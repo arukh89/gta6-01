@@ -14,6 +14,7 @@ import { createCrewJobState, updateCrewJobs } from './missions.js';
 import { createMinigameState, updateMinigames } from './minigames.js';
 import { spawnCashBurst, updateEffects } from './effects.js';
 import { createCharacterRecords } from './characters.js';
+import { createWheelState } from './wheel.js';
 
 /** Progress the HUD shows and the save keeps: Respect, skill points and
  * levels, Tide Tapes found, and which hideouts Dario has unlocked. */
@@ -96,6 +97,9 @@ export function createGameState(cityRng, playRng) {
     dusk: false,
     lastPoliceSpawn: -99,
     lastOfficerSpawn: -99,
+    // The weapon wheel (hold Tab): pure UI state — open or closed, which
+    // segment is highlighted — never saved, never random, never a rule.
+    wheel: createWheelState(),
     // Run counters; crewDone counts finished crew jobs (0–4).
     stats: { missionsDone: 0, taxisDone: 0, shotsFired: 0, carsStolen: 0, cashFound: 0, racesWon: 0, eventsSolved: 0, crewDone: 0 },
   };

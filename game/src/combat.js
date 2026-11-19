@@ -2,6 +2,8 @@
 // who buy one at Cielo Arms, bullets that spark off walls and dent cars,
 // and officers who push back at high heat. Walkers can be killed (50 HP);
 // officers only get knocked down and get back up, and cars smoke and stall.
+// While the weapon wheel is open the trigger stays quiet — the crew is
+// picking a weapon, not firing one.
 import { WEAPONS, skillLevel } from './config.js';
 import { damageCar, damagePlayer, playerCar } from './player.js';
 import { damagePedestrian, panicNearby } from './pedestrians.js';
@@ -71,17 +73,20 @@ function fireGun(state, events) {
 
 export function updateCombat(state, input, dt, events, toWorld) {
   const player = state.player;
+  // The weapon wheel holds the trigger: while it is open the mouse is
+  // picking a segment, so neither a punch nor a shot may go off.
+  const wheelOpen = !!(state.wheel && state.wheel.open);
   // Darts is thrown with a click, not shot: while a darts game is
   // running the trigger throws darts, so the gun stays holstered.
   // No shooting while swimming either: both hands are busy staying afloat.
   const darts = state.minigame && state.minigame.active && state.minigame.kind === 'darts';
-  if (player.onFoot && !player.swimming && !darts && input.isFiring() && player.attackCooldown <= 0) {
+  if (player.onFoot && !player.swimming && !darts && !wheelOpen && input.isFiring() && player.attackCooldown <= 0) {
     if (player.weapon === 'fists') meleeAttack(state, events);
     else fireGun(state, events);
   }
   // Drive-by shooting: pistol or SMG from the driver's seat, aimed
   // with the mouse like on foot. Fists stay out of the car.
-  if (!player.onFoot && !darts && input.isFiring() && player.attackCooldown <= 0 && player.weapon !== 'fists') {
+  if (!player.onFoot && !darts && !wheelOpen && input.isFiring() && player.attackCooldown <= 0 && player.weapon !== 'fists') {
     const aim = toWorld ? toWorld(input.mouse().x, input.mouse().y) : { x: player.x + Math.cos(player.angle) * 200, y: player.y + Math.sin(player.angle) * 200 };
     player.angle = Math.atan2(aim.y - player.y, aim.x - player.x);
     fireGun(state, events);

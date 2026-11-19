@@ -1,12 +1,16 @@
 // The DOM HUD and the minimap: wanted stars, health, money, the mission
 // objective, the clock, weapon and speed readouts, prompts and toasts. The
 // minimap is a small canvas painted from the city itself, with blips for the
-// player, the mission marker, police and taxi stands. Text updates are kept
-// cheap: only rewritten when the value shown actually changes.
+// player, the mission marker, police and taxi stands. The weapon wheel is a
+// second small canvas, painted only while Tab is held: three wedges (Fists,
+// Pistol, SMG) around a centre that names the highlighted weapon. Text
+// updates are kept cheap: only rewritten when the value shown actually
+// changes.
 import { HEALTH, PALETTE, VEHICLES, WEAPONS, WORLD, characterById, repTitle, skillLevel } from './config.js';
 import { BRIDGE_DECK, RIVER, bridgeCrossings, districtNameAt, waterYAt } from './world.js';
 import { MISSION_COUNT, RACE, missionList, missionMarker, objectiveText } from './missions.js';
 import { CREW_JOBS, crewJobStartPoints } from './missions.js';
+import { WHEEL_SLOTS, wheelSlots } from './wheel.js';
 import { playerCar } from './player.js';
 
 function el(id) {
@@ -56,11 +60,14 @@ export function createHud() {
     hint: el('hint'),
     district: el('district'),
     heatStatus: el('heatstatus'),
+    wheel: el('wheel'),
+    wheelCanvas: el('wheelcanvas'),
     mapCanvas: el('mapcanvas'),
     mapList: el('maplist'),
     minimap: el('minimap'),
   };
   const mapCtx = nodes.minimap.getContext('2d');
+  const wheelCtx = nodes.wheelCanvas ? nodes.wheelCanvas.getContext('2d') : null;
   let mapBase = null;
   let mapCity = null;
   let last = {};
@@ -367,6 +374,91 @@ export function createHud() {
     mapCtx.restore(); // un-clip the round minimap
   }
 
+  // The weapon wheel (hold Tab): three wedges on a 300x300 canvas, Fists
+  // at the top, Pistol bottom-right, SMG bottom-left — the same sectors
+  // wheel.js picks from the mouse angle, so the paint and the pick never
+  // disagree. The highlighted wedge is gold; a weapon the crew does not
+  // own yet is dimmed and marked LOCKED. The centre names the highlight.
+  function drawWheel(state) {
+    if (!wheelCtx || !nodes.wheel) return;
+    const wheel = state.wheel;
+    if (!wheel || !wheel.open) {
+      nodes.wheel.classList.add('hidden');
+      return;
+    }
+    nodes.wheel.classList.remove('hidden');
+    const slots = wheelSlots(state);
+    const ctx = wheelCtx;
+    const cx = 150;
+    const cy = 150;
+    const outer = 140;
+    const inner = 54;
+    const centres = [-90, 30, 150]; // wedge centres, degrees, y down
+    ctx.clearRect(0, 0, 300, 300);
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    for (let i = 0; i < WHEEL_SLOTS.length; i += 1) {
+      const slot = slots[i];
+      const a0 = ((centres[i] - 60) * Math.PI) / 180;
+      const a1 = ((centres[i] + 60) * Math.PI) / 180;
+      const picked = i === wheel.selected;
+      ctx.beginPath();
+      ctx.arc(cx, cy, outer, a0, a1);
+      ctx.arc(cx, cy, inner, a1, a0, true);
+      ctx.closePath();
+      ctx.fillStyle = picked ? 'rgba(255, 183, 3, 0.94)' : slot.owned ? 'rgba(20, 12, 6, 0.85)' : 'rgba(20, 12, 6, 0.45)';
+      ctx.fill();
+      ctx.strokeStyle = picked ? '#fff6e8' : 'rgba(255, 246, 232, 0.55)';
+      ctx.lineWidth = picked ? 3 : 1.5;
+      ctx.stroke();
+      // Glyph + name + ammo, at the wedge's mid-radius.
+      const mid = (centres[i] * Math.PI) / 180;
+      const gx = cx + Math.cos(mid) * 98;
+      const gy = cy + Math.sin(mid) * 98;
+      const ink = picked ? '#1d130c' : slot.owned ? '#fff6e8' : '#9a9a9a';
+      ctx.fillStyle = ink;
+      ctx.strokeStyle = ink;
+      ctx.lineWidth = 2;
+      if (slot.id === 'fists') {
+        ctx.beginPath(); ctx.arc(gx - 8, gy - 6, 7, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(gx + 8, gy - 6, 7, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(gx - 8, gy + 8, 7, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(gx + 8, gy + 8, 7, 0, Math.PI * 2); ctx.fill();
+      } else if (slot.id === 'pistol') {
+        ctx.fillRect(gx - 14, gy - 12, 26, 7);
+        ctx.fillRect(gx - 4, gy - 5, 8, 16);
+      } else {
+        ctx.fillRect(gx - 16, gy - 12, 32, 7);
+        ctx.fillRect(gx - 2, gy - 5, 7, 14);
+        ctx.fillRect(gx + 8, gy - 5, 5, 10);
+      }
+      ctx.font = '800 15px "Avenir Next", "Segoe UI", system-ui, sans-serif';
+      ctx.fillText(slot.name.toUpperCase(), gx, gy + 26);
+      if (slot.owned && slot.ammoText) {
+        ctx.font = '700 12px "Avenir Next", "Segoe UI", system-ui, sans-serif';
+        ctx.fillText(slot.ammoText, gx, gy + 43);
+      } else if (!slot.owned) {
+        ctx.font = '800 11px "Avenir Next", "Segoe UI", system-ui, sans-serif';
+        ctx.fillText('LOCKED', gx, gy + 43);
+      }
+    }
+    // Centre: the highlighted weapon, big, with its ammo under it.
+    const picked = slots[wheel.selected];
+    ctx.beginPath();
+    ctx.arc(cx, cy, inner - 4, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(20, 12, 6, 0.9)';
+    ctx.fill();
+    ctx.strokeStyle = '#ffb703';
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+    ctx.fillStyle = '#fff6e8';
+    ctx.font = '800 16px "Avenir Next", "Segoe UI", system-ui, sans-serif';
+    ctx.fillText(picked.name.toUpperCase(), cx, cy - 8);
+    ctx.font = '700 11px "Avenir Next", "Segoe UI", system-ui, sans-serif';
+    ctx.fillStyle = '#ffb703';
+    ctx.fillText(picked.owned && picked.ammoText ? picked.ammoText : picked.owned ? 'READY' : 'LOCKED', cx, cy + 12);
+  }
+
   return {
     show() {
       nodes.hud.classList.remove('hidden');
@@ -623,6 +715,7 @@ export function createHud() {
         nodes.hint.style.opacity = '0.35';
       }
       drawMinimap(state);
+      drawWheel(state);
     },
   };
 }

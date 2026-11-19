@@ -203,6 +203,13 @@ export function stageShot(name, state, stepper) {
     // strolling slowly by the crate, so the shot shows a named local.
     bringNamedIntoFrame(state, 'Dedi', 2900, 1720, near);
     idleWorld(state, stepper, 2);
+    // The weapon wheel, open on the Pistol: Ivy owns it (12 in the mag,
+    // 48 in reserve), so the staged frame shows the radial selector
+    // itself — three wedges, the Pistol highlighted gold, the SMG dimmed
+    // and locked because the crew has not bought one yet.
+    state.wheel.open = true;
+    state.wheel.selected = 1;
+    state.wheel.touched = true;
     return 'play';
   }
   if (name === 'map') {

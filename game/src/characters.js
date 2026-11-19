@@ -1,4 +1,5 @@
-// Three playable characters (H9): Lena Cruz plus two original crew members.
+// Three playable characters for Solmaris Heat: Lena Cruz the wheelwoman,
+// Ivy Solano the sharpshooter and Marco Vane the muscle — all original.
 // The crew shares money, jobs, Respect and progress; each character keeps
 // their own skills, weapons, health and spot in the city. The live
 // `state.player` and `state.progress` skill points always describe the

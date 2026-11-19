@@ -1,7 +1,9 @@
 // Keyboard and mouse for Solmaris: held movement keys, one-shot action flags
 // (taken once, never lost between frames), the aim point in screen space, and
 // click-to-attack. Buttons in the DOM overlays handle menus; this file only
-// feeds the simulation.
+// feeds the simulation. Hold Tab for the weapon wheel (the radial selector in
+// wheel.js) — Tab is swallowed here so the browser never moves focus while
+// the crew picks a weapon.
 
 export const ACT = {
   ENTER_CAR: 1,
@@ -55,6 +57,9 @@ export function createInput(canvas) {
     else if (event.code === 'Digit1') actions |= ACT.WEAPON_FISTS;
     else if (event.code === 'Digit2') actions |= ACT.WEAPON_PISTOL;
     else if (event.code === 'Digit3') actions |= ACT.WEAPON_SMG;
+    // Tab opens the weapon wheel (held, not an action): swallow it so the
+    // browser never walks focus off the game while the wheel is up.
+    if (event.code === 'Tab') event.preventDefault();
     if (UP.has(event.code) || DOWN.has(event.code) || LEFT.has(event.code) || RIGHT.has(event.code) || event.code === 'Space') {
       event.preventDefault();
     }
@@ -104,6 +109,10 @@ export function createInput(canvas) {
     slowmo() {
       return held.has('KeyX');
     },
+    /** Hold Tab for the weapon wheel: the radial selector in wheel.js. */
+    wheelHeld() {
+      return held.has('Tab');
+    },
     /** Hold Space while driving for the NOS boost. */
     boost() {
       return held.has('Space');
@@ -128,6 +137,7 @@ export function createInput(canvas) {
         throttle: () => throttleValue,
         sprint: () => false,
         slowmo: () => false,
+        wheelHeld: () => false,
         boost: () => false,
         mouse: () => (aim ? { x: aim.x, y: aim.y } : { x: mouseX, y: mouseY }),
         isFiring: () => !!fire,
