@@ -12,7 +12,7 @@
 import * as THREE from 'three';
 import { PALETTE, VEHICLES, WORLD } from './config.js';
 import { buildGround } from './render.js';
-import { RACE, missionMarker } from './missions.js';
+import { CREW_JOBS, RACE, crewJobStartPoints, missionMarker } from './missions.js';
 import { playerCar } from './player.js';
 
 /** How much taller a building reads in 3D than its 2D extrusion height. */
@@ -169,8 +169,13 @@ export function createRenderer3d(canvas) {
   const palmTrunkGeo = new THREE.CylinderGeometry(2.5, 3.5, 28, 6);
   const crownGeo = new THREE.ConeGeometry(20, 7, 6);
   const headGeo = new THREE.SphereGeometry(5.5, 10, 8);
-  const bodyGeo = new THREE.CylinderGeometry(7, 8, 18, 8);
+  // A person is a torso (shirt) over legs (trousers), so outfits read as
+  // more than one colour; hats get their own geometry below.
+  const torsoGeo = new THREE.CylinderGeometry(7, 7.5, 12, 8);
+  const legsGeo = new THREE.CylinderGeometry(6.5, 7, 6, 8);
   const capGeo = new THREE.CylinderGeometry(6, 6, 3, 10);
+  const brimGeo = new THREE.CylinderGeometry(9.5, 9.5, 1, 12);
+  const domeGeo = new THREE.SphereGeometry(4.5, 10, 8);
   const bulletGeo = new THREE.SphereGeometry(3.5, 6, 5);
   const particleGeo = new THREE.SphereGeometry(1, 6, 5);
   const ringGeo = new THREE.TorusGeometry(22, 1.6, 8, 40);
@@ -196,6 +201,36 @@ export function createRenderer3d(canvas) {
     mesh.receiveShadow = true;
     parent.add(mesh);
     return mesh;
+  }
+
+  /** A small rooftop feature on the topmost face, sized to it, so
+   * silhouettes differ even from the chase cam. */
+  function addRoofDetail(kind, x, topY, z, tw, th) {
+    const s = Math.min(tw, th);
+    if (kind === 'ac') {
+      box(Math.min(12, tw * 0.4), 4, Math.min(9, th * 0.4), lambert('#9aa0a6'), x, topY + 2, z, cityGroup);
+    } else if (kind === 'antenna') {
+      box(2, 26, 2, lambert('#3a3a3a'), x, topY + 13, z, cityGroup);
+      box(4, 2, 4, basic('#ff5d8f'), x, topY + 27, z, cityGroup);
+    } else if (kind === 'helipad') {
+      const r = Math.max(4, s * 0.32);
+      const pad = new THREE.Mesh(new THREE.CylinderGeometry(r, r, 2, 12), lambert('#e8e8e8'));
+      pad.position.set(x, topY + 1, z);
+      pad.castShadow = true;
+      cityGroup.add(pad);
+      buildingGeometries.push(pad.geometry);
+      box(r * 1.4, 1, 2, basic('#e63946'), x, topY + 2.5, z, cityGroup);
+    } else if (kind === 'garden') {
+      box(tw * 0.45, 3, th * 0.45, lambert('#2a7d4f'), x, topY + 1.5, z, cityGroup);
+      box(6, 5, 6, lambert('#40916c'), x + tw * 0.15, topY + 4, z, cityGroup);
+    } else if (kind === 'watertower') {
+      box(2, 10, 2, lambert('#6c757d'), x, topY + 5, z, cityGroup);
+      const tank = new THREE.Mesh(new THREE.CylinderGeometry(Math.max(3, s * 0.18), Math.max(3, s * 0.18), 9, 8), lambert('#adb5bd'));
+      tank.position.set(x, topY + 14, z);
+      tank.castShadow = true;
+      cityGroup.add(tank);
+      buildingGeometries.push(tank.geometry);
+    }
   }
 
   function buildCity(city) {
@@ -230,16 +265,48 @@ export function createRenderer3d(canvas) {
     buildingGeometries.push(apron.geometry);
 
     for (const b of city.buildings) {
-      const h3 = b.height * HEIGHT_SCALE;
-      const geo = windowedBoxGeometry(b.w, h3, b.h);
+      const upH = b.upper ? b.upper.height : 0;
+      const baseH3 = (b.height - upH) * HEIGHT_SCALE;
+      const geo = windowedBoxGeometry(b.w, baseH3, b.h);
       buildingGeometries.push(geo);
       const mesh = new THREE.Mesh(geo, [facade(b.color), facade(b.color), roof(b.color), roof(b.color), facade(b.color), facade(b.color)]);
-      mesh.position.set(b.x + b.w / 2 - CENTER_X, h3 / 2, b.y + b.h / 2 - CENTER_Y);
+      mesh.position.set(b.x + b.w / 2 - CENTER_X, baseH3 / 2, b.y + b.h / 2 - CENTER_Y);
       mesh.castShadow = true;
       mesh.receiveShadow = true;
       cityGroup.add(mesh);
+      // Stepped / podium upper tier: a narrower windowed box on the base
+      // roof, strictly inside the base footprint.
+      if (b.upper) {
+        const u = b.upper;
+        const uh3 = u.height * HEIGHT_SCALE;
+        const ugeo = windowedBoxGeometry(u.w, uh3, u.h);
+        buildingGeometries.push(ugeo);
+        const umesh = new THREE.Mesh(ugeo, [facade(b.color), facade(b.color), roof(b.color), roof(b.color), facade(b.color), facade(b.color)]);
+        umesh.position.set(u.x + u.w / 2 - CENTER_X, baseH3 + uh3 / 2, u.y + u.h / 2 - CENTER_Y);
+        umesh.castShadow = true;
+        umesh.receiveShadow = true;
+        cityGroup.add(umesh);
+      }
+      // L arm: a second windowed box at ground level, same palette.
+      if (b.arm) {
+        const a = b.arm;
+        const ah3 = a.height * HEIGHT_SCALE;
+        const ageo = windowedBoxGeometry(a.w, ah3, a.h);
+        buildingGeometries.push(ageo);
+        const amesh = new THREE.Mesh(ageo, [facade(b.color), facade(b.color), roof(b.color), roof(b.color), facade(b.color), facade(b.color)]);
+        amesh.position.set(a.x + a.w / 2 - CENTER_X, ah3 / 2, a.y + a.h / 2 - CENTER_Y);
+        amesh.castShadow = true;
+        amesh.receiveShadow = true;
+        cityGroup.add(amesh);
+      }
+      // Rooftop detail on the topmost face (upper tier if any, else base).
+      if (b.roof) {
+        const top = b.upper || b;
+        addRoofDetail(b.roof.kind, top.x + b.roof.fx * top.w - CENTER_X, b.height * HEIGHT_SCALE, top.y + b.roof.fy * top.h - CENTER_Y, top.w, top.h);
+      }
       if (b.sign) {
-        const sign = box(b.w * 0.6, 4, 2, basic(b.sign), b.x + b.w / 2 - CENTER_X, h3 * 0.55, b.y + b.h + 2 - CENTER_Y, cityGroup);
+        // The sign hangs on the base face, so its height is the base's.
+        const sign = box(b.w * 0.6, 4, 2, basic(b.sign), b.x + b.w / 2 - CENTER_X, baseH3 * 0.55, b.y + b.h + 2 - CENTER_Y, cityGroup);
         sign.castShadow = false;
         signMeshes.push(sign);
       }
@@ -290,8 +357,73 @@ export function createRenderer3d(canvas) {
     for (const boat of city.boats) {
       const hull = box(52, 8, 18, lambert('#ffffff'), boat.x - CENTER_X, 4, boat.y - CENTER_Y, cityGroup);
       hull.rotation.y = -boat.angle;
-      const cabin = box(16, 10, 12, lambert('#e63946'), boat.x - CENTER_X, 12, boat.y - CENTER_Y, cityGroup);
+      // A speedboat wears a pale canopy, a skiff the red cabin.
+      const cabin = boat.variant === 'speedboat'
+        ? box(20, 6, 12, lambert('#8ecae6'), boat.x - CENTER_X, 11, boat.y - CENTER_Y, cityGroup)
+        : box(16, 10, 12, lambert('#e63946'), boat.x - CENTER_X, 12, boat.y - CENTER_Y, cityGroup);
       cabin.rotation.y = -boat.angle;
+    }
+
+    // Street props: the same kinds the 2D renderer draws, as low-poly
+    // groups — billboards and neon signs on poles, vendor carts with
+    // awnings, benches, hydrants, planters, lifeguard towers, crates,
+    // dock posts, picnic tables and mailboxes.
+    for (const prop of city.props) {
+      const x = prop.x - CENTER_X;
+      const z = prop.y - CENTER_Y;
+      if (prop.kind === 'billboard' || prop.kind === 'neon-sign') {
+        const pole = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 1.5, 30, 6), trunkMat);
+        pole.position.set(x, 15, z);
+        cityGroup.add(pole);
+        buildingGeometries.push(pole.geometry);
+        const board = box(30, 14, 2, basic(prop.color), x, 36, z, cityGroup);
+        board.rotation.y = prop.angle;
+        board.castShadow = false;
+      } else if (prop.kind === 'vendor') {
+        box(18, 8, 12, lambert('#6d4c41'), x, 4, z, cityGroup);
+        const awn = box(22, 2, 14, lambert(prop.color), x, 10, z, cityGroup);
+        awn.rotation.y = prop.angle;
+      } else if (prop.kind === 'bench') {
+        box(22, 2, 5, lambert(prop.color), x, 3, z, cityGroup);
+        box(22, 5, 2, lambert(prop.color), x, 6, z + 3, cityGroup);
+      } else if (prop.kind === 'hydrant') {
+        const body = new THREE.Mesh(new THREE.CylinderGeometry(3, 3.5, 8, 8), lambert(prop.color));
+        body.position.set(x, 4, z);
+        body.castShadow = true;
+        cityGroup.add(body);
+        buildingGeometries.push(body.geometry);
+      } else if (prop.kind === 'planter') {
+        const pot = new THREE.Mesh(new THREE.CylinderGeometry(7, 5, 6, 8), lambert('#8d5524'));
+        pot.position.set(x, 3, z);
+        cityGroup.add(pot);
+        buildingGeometries.push(pot.geometry);
+        const bush = new THREE.Mesh(new THREE.SphereGeometry(6, 8, 6), leafMat);
+        bush.position.set(x, 9, z);
+        bush.castShadow = true;
+        cityGroup.add(bush);
+        buildingGeometries.push(bush.geometry);
+      } else if (prop.kind === 'lifeguard') {
+        for (const [dx, dz] of [[-5, -5], [5, -5], [-5, 5], [5, 5]]) {
+          box(2, 16, 2, lambert('#8d5524'), x + dx, 8, z + dz, cityGroup);
+        }
+        box(16, 6, 12, lambert('#f8f9fa'), x, 19, z, cityGroup);
+        box(18, 2, 14, lambert(prop.color), x, 23, z, cityGroup);
+      } else if (prop.kind === 'crate') {
+        box(14, 10, 14, lambert(prop.color), x, 5, z, cityGroup);
+        box(10, 8, 10, lambert(prop.color), x + 2, 14, z - 2, cityGroup);
+      } else if (prop.kind === 'dockpost') {
+        const post = new THREE.Mesh(new THREE.CylinderGeometry(2, 2, 8, 6), lambert('#3a3a3a'));
+        post.position.set(x, 4, z);
+        cityGroup.add(post);
+        buildingGeometries.push(post.geometry);
+      } else if (prop.kind === 'picnic') {
+        box(24, 2, 10, lambert(prop.color), x, 4, z, cityGroup);
+        box(24, 2, 4, lambert(prop.color), x, 3, z - 8, cityGroup);
+        box(24, 2, 4, lambert(prop.color), x, 3, z + 8, cityGroup);
+      } else if (prop.kind === 'mailbox') {
+        box(2, 12, 2, lambert('#3a3a3a'), x, 6, z, cityGroup);
+        box(10, 8, 6, lambert(prop.color), x, 16, z, cityGroup);
+      }
     }
 
     for (const drop of city.cashDrops) {
@@ -315,6 +447,9 @@ export function createRenderer3d(canvas) {
   const pedMeshes = new Map();
   let playerMesh = null;
   let playerMeshShirt = null;
+  let playerMeshChar = null;
+  let playerMeshScale = 1;
+  let playerMeshBuild = 1;
   let playerRing = null;
   let aimLine = null;
   let carRing = null;
@@ -338,6 +473,15 @@ export function createRenderer3d(canvas) {
   const raceMarker = new THREE.Mesh(markerGeo, basic('#9b5de5'));
   raceMarker.position.y = 50;
   dynamicGroup.add(raceMarker);
+
+  // Crew-job start markers: one gold octahedron per job that can be
+  // started now (at most four); they float over their start points.
+  const crewMarkers = CREW_JOBS.map(() => {
+    const m = new THREE.Mesh(markerGeo, basic('#ffb703'));
+    m.position.y = 50;
+    dynamicGroup.add(m);
+    return m;
+  });
 
   // Darts: a board on the Neon Club, always there. Range targets at
   // Cielo Arms: five posts with red discs, up only while a range game runs.
@@ -404,17 +548,56 @@ export function createRenderer3d(canvas) {
   function buildCarMesh(car) {
     const spec = VEHICLES[car.kind];
     const group = new THREE.Group();
-    const body = box(spec.length, 10, spec.width, lambert(car.color), 0, 7, 0, group);
+    // A van is a tall box; everything else keeps the low body.
+    const bodyH = car.kind === 'van' ? 16 : 10;
+    const bodyY = car.kind === 'van' ? 10 : 7;
+    const body = box(spec.length, bodyH, spec.width, lambert(car.color), 0, bodyY, 0, group);
     void body;
-    // A boat floats: no tyres and no glass roofline — a red cabin instead.
+    // A boat floats: no tyres and no glass roofline — a red cabin on a
+    // skiff, a pale canopy on a speedboat.
     if (car.kind === 'boat') {
-      box(spec.length * 0.28, 8, spec.width * 0.6, lambert('#e63946'), -spec.length * 0.05, 16, 0, group);
+      if (car.variant === 'speedboat') {
+        box(spec.length * 0.3, 6, spec.width * 0.6, lambert('#f8f9fa'), -spec.length * 0.05, 15, 0, group);
+      } else {
+        box(spec.length * 0.28, 8, spec.width * 0.6, lambert('#e63946'), -spec.length * 0.05, 16, 0, group);
+      }
     } else {
-      box(spec.length * 0.45, 9, spec.width * 0.78, glassMat, -spec.length * 0.05, 15, 0, group);
+      // Cabin by body shape: a truck's cab sits ahead of its open bed,
+      // a van's glass rides on its tall roof, a hatch is short with
+      // its cabin forward.
+      if (car.kind === 'truck') {
+        box(spec.length * 0.38, 8, spec.width * 0.78, glassMat, spec.length * 0.24, 15, 0, group);
+        box(spec.length * 0.36, 2, spec.width * 0.8, lambert('#2b2b2b'), -spec.length * 0.3, 11, 0, group);
+        box(spec.length * 0.36, 5, 2, lambert(car.color), -spec.length * 0.3, 14.5, -spec.width / 2 + 1, group);
+        box(spec.length * 0.36, 5, 2, lambert(car.color), -spec.length * 0.3, 14.5, spec.width / 2 - 1, group);
+        box(2, 5, spec.width * 0.8, lambert(car.color), -spec.length / 2 + 1, 14.5, 0, group);
+      } else if (car.kind === 'van') {
+        box(spec.length * 0.5, 8, spec.width * 0.78, glassMat, -spec.length * 0.05, 22, 0, group);
+      } else if (car.kind === 'hatch') {
+        box(spec.length * 0.35, 9, spec.width * 0.78, glassMat, spec.length * 0.1, 15, 0, group);
+      } else {
+        box(spec.length * 0.45, 9, spec.width * 0.78, glassMat, -spec.length * 0.05, 15, 0, group);
+      }
+      // A spoiler on the fast ones: sports and coupes wear a rear wing.
+      if (car.kind === 'sports' || car.kind === 'coupe') {
+        box(3, 2, spec.width * 0.9, tyreMat, -spec.length / 2 + 2, 14, 0, group);
+      }
       for (const sx of [-1, 1]) {
         for (const sz of [-1, 1]) {
           box(9, 9, 4, tyreMat, sx * spec.length * 0.32, 4.5, sz * (spec.width / 2), group);
         }
+      }
+    }
+    // Police livery, from the car id: 0 = white doors, 1 = white side
+    // stripe, 2 = white roof panel. Every cruiser reads differently.
+    if (car.kind === 'police') {
+      if (car.livery === 0) {
+        box(12, 10.5, spec.width + 0.5, lambert('#f8f9fa'), 0, 7, 0, group);
+      } else if (car.livery === 1) {
+        box(spec.length * 0.6, 3, 1, lambert('#f8f9fa'), 0, 9, -spec.width / 2 - 0.5, group);
+        box(spec.length * 0.6, 3, 1, lambert('#f8f9fa'), 0, 9, spec.width / 2 + 0.5, group);
+      } else {
+        box(spec.length * 0.34, 2, spec.width * 0.72, lambert('#f8f9fa'), -spec.length * 0.05, 20, 0, group);
       }
     }
     box(2, 3, 4, basic('#fff8d6'), spec.length / 2, 7, -spec.width / 2 + 5, group);
@@ -439,19 +622,75 @@ export function createRenderer3d(canvas) {
     return group;
   }
 
-  function buildPersonMesh(shirt, skin, kind) {
+  // A floating name tag for a named local: one small canvas per name,
+  // shared by every sprite that shows it.
+  const nameTexCache = new Map();
+  function makeNameSprite(name) {
+    if (!nameTexCache.has(name)) {
+      const c = document.createElement('canvas');
+      c.width = 256;
+      c.height = 56;
+      const g = c.getContext('2d');
+      g.font = '700 30px system-ui, sans-serif';
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      g.lineWidth = 6;
+      g.strokeStyle = 'rgba(0,0,0,0.8)';
+      g.strokeText(name, 128, 28);
+      g.fillStyle = '#fff';
+      g.fillText(name, 128, 28);
+      nameTexCache.set(name, new THREE.CanvasTexture(c));
+    }
+    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: nameTexCache.get(name), transparent: true, depthWrite: false }));
+    sprite.scale.set(56, 12, 1);
+    sprite.position.y = 44;
+    return sprite;
+  }
+
+  function buildPersonMesh(shirt, skin, kind, look) {
     const group = new THREE.Group();
-    const body = new THREE.Mesh(bodyGeo, lambert(shirt));
-    body.position.y = 9;
-    body.castShadow = true;
+    const v = look || {};
+    const torso = new THREE.Mesh(torsoGeo, lambert(shirt));
+    torso.position.y = 12;
+    torso.castShadow = true;
+    const legs = new THREE.Mesh(legsGeo, lambert(v.pants || '#3d405b'));
+    legs.position.y = 3;
+    legs.castShadow = true;
     const head = new THREE.Mesh(headGeo, lambert(skin));
     head.position.y = 24;
     head.castShadow = true;
-    group.add(body, head);
-    if (kind === 'cop' || kind === 'player') {
-      const cap = new THREE.Mesh(capGeo, lambert(kind === 'cop' ? '#14213d' : '#ffb703'));
+    group.add(torso, legs, head);
+    // Hats: cops keep the dark cap, the player keeps the gold one (the
+    // marker), walkers wear theirs. The style varies, the colour marks
+    // the role.
+    const hatKind = v.hat || (kind === 'cop' || kind === 'player' ? 'cap' : 'none');
+    const hatColor = kind === 'cop' ? '#14213d' : kind === 'player' ? '#ffb703' : (v.hatColor || '#333');
+    if (hatKind === 'cap') {
+      const cap = new THREE.Mesh(capGeo, lambert(hatColor));
       cap.position.y = 28;
       group.add(cap);
+    } else if (hatKind === 'beanie') {
+      const beanie = new THREE.Mesh(headGeo, lambert(hatColor));
+      beanie.position.y = 27.5;
+      beanie.scale.set(1.15, 0.6, 1.15);
+      group.add(beanie);
+    } else if (hatKind === 'wide') {
+      const brim = new THREE.Mesh(brimGeo, lambert(hatColor));
+      brim.position.y = 27;
+      const dome = new THREE.Mesh(domeGeo, lambert(hatColor));
+      dome.position.y = 28;
+      dome.scale.set(1, 0.7, 1);
+      group.add(brim, dome);
+    }
+    // Height and build: the whole figure scales, so a tall broad local
+    // and a short slim one read as different people at a glance.
+    const s = v.scale ?? 1;
+    const b = v.build ?? 1;
+    group.scale.set(s * b, s, s * b);
+    if (v.name) {
+      const label = makeNameSprite(v.name);
+      group.userData.nameSprite = label;
+      group.add(label);
     }
     return group;
   }
@@ -639,7 +878,7 @@ export function createRenderer3d(canvas) {
     for (const ped of state.peds) {
       let group = pedMeshes.get(ped);
       if (!group) {
-        group = buildPersonMesh(ped.shirt, ped.skin, ped.kind);
+        group = buildPersonMesh(ped.shirt, ped.skin, ped.kind, ped);
         pedMeshes.set(ped, group);
         dynamicGroup.add(group);
       }
@@ -654,6 +893,8 @@ export function createRenderer3d(canvas) {
         group.position.set(ped.x - CENTER_X, bob * 0.3, ped.y - CENTER_Y);
         group.rotation.set(0, -ped.angle, 0);
       }
+      // A name tag only stands while its owner does.
+      if (group.userData.nameSprite) group.userData.nameSprite.visible = ped.down <= 0;
     }
     for (const [ped, group] of pedMeshes) {
       if (!seenPeds.has(ped)) {
@@ -665,10 +906,13 @@ export function createRenderer3d(canvas) {
     // The player mesh is rebuilt when the shirt changes (a character
     // switch): the ring, aim line and car ring are built once only.
     const shirt = state.player.shirt || '#fb8500';
-    if (!playerMesh || playerMeshShirt !== shirt) {
+    if (!playerMesh || playerMeshShirt !== shirt || playerMeshChar !== state.character) {
       if (playerMesh) dynamicGroup.remove(playerMesh);
-      playerMesh = buildPersonMesh(shirt, state.player.skin || '#c68642', 'player');
+      playerMesh = buildPersonMesh(shirt, state.player.skin || '#c68642', 'player', state.player);
       playerMeshShirt = shirt;
+      playerMeshChar = state.character;
+      playerMeshScale = state.player.scale ?? 1;
+      playerMeshBuild = state.player.build ?? 1;
       dynamicGroup.add(playerMesh);
     }
     if (!playerRing) {
@@ -692,7 +936,7 @@ export function createRenderer3d(canvas) {
       const bob = Math.sin(player.walkPhase || 0) * 1.5;
       playerMesh.position.set(player.x - CENTER_X, (player.z || 0) + bob * 0.3, player.y - CENTER_Y);
       playerMesh.rotation.y = -player.angle;
-      playerMesh.scale.set(1, player.cover ? 0.62 : 1, 1);
+      playerMesh.scale.set(playerMeshScale * playerMeshBuild, playerMeshScale * (player.cover ? 0.62 : 1), playerMeshScale * playerMeshBuild);
       playerRing.position.set(player.x - CENTER_X, 1, player.y - CENTER_Y);
       aimLine.position.set(player.x + Math.cos(player.angle) * 14 - CENTER_X, 2, player.y + Math.sin(player.angle) * 14 - CENTER_Y);
       aimLine.rotation.y = -player.angle;
@@ -721,6 +965,15 @@ export function createRenderer3d(canvas) {
       raceMarker.position.set(RACE.start.x - CENTER_X, 50 + Math.sin(state.time * 3) * 4, RACE.start.y - CENTER_Y);
       raceMarker.rotation.y = state.time * 1.5;
     }
+
+    const crewStarts = crewJobStartPoints(state);
+    crewMarkers.forEach((m, i) => {
+      m.visible = i < crewStarts.length;
+      if (m.visible) {
+        m.position.set(crewStarts[i].x - CENTER_X, 50 + Math.sin(state.time * 3 + i) * 4, crewStarts[i].y - CENTER_Y);
+        m.rotation.y = state.time * 1.5 + i;
+      }
+    });
 
     // Darts board on the Neon Club, and the range targets while a game runs.
     dartBoard.position.set(state.city.property.x - CENTER_X, 24, state.city.property.y - CENTER_Y);

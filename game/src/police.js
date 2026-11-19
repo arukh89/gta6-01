@@ -5,7 +5,7 @@
 import { WANTED, WORLD } from './config.js';
 import { createCar, playerCar } from './player.js';
 import { createOfficer, createSwatOfficer, panicNearby } from './pedestrians.js';
-import { hasLineOfSight, resolveBuildingCollision } from './world.js';
+import { dryPoint, hasLineOfSight, resolveBuildingCollision } from './world.js';
 
 export function createWanted() {
   // `heat` is the sixth star: a separate flag over the 0-5 level, so the
@@ -90,9 +90,9 @@ function spawnPoliceCar(state) {
 function spawnOfficer(state) {
   const player = state.player;
   const angle = state.rng.range(0, Math.PI * 2);
-  // Officers stay on dry land: never spawn in the water.
-  const y = Math.min(player.y + Math.sin(angle) * 420, WORLD.waterY - 14);
-  const officer = createOfficer(player.x + Math.cos(angle) * 420, y);
+  // Officers stay on dry land: never spawn in the water (bay or river).
+  const [ox, oy] = dryPoint(state.city, player.x + Math.cos(angle) * 420, player.y + Math.sin(angle) * 420);
+  const officer = createOfficer(ox, oy);
   state.peds.push(officer);
 }
 
@@ -102,7 +102,8 @@ function spawnOfficer(state) {
 function spawnSwat(state) {
   const player = state.player;
   const angle = state.rng.range(0, Math.PI * 2);
-  const officer = createSwatOfficer(player.x + Math.cos(angle) * 420, Math.min(player.y + Math.sin(angle) * 420, WORLD.waterY - 14));
+  const [ox, oy] = dryPoint(state.city, player.x + Math.cos(angle) * 420, player.y + Math.sin(angle) * 420);
+  const officer = createSwatOfficer(ox, oy);
   state.peds.push(officer);
   return officer;
 }

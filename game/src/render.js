@@ -4,7 +4,8 @@
 // so a car passing a tall tower reads as passing behind its face. Warm light,
 // long shadows and a dusk tint carry the sun-soaked look.
 import { FONT, PALETTE, VEHICLES, WORLD } from './config.js';
-import { RACE, missionMarker } from './missions.js';
+import { BRIDGE_DECK, RIVER, bridgeCrossings, waterYAt } from './world.js';
+import { RACE, crewJobStartPoints, missionMarker } from './missions.js';
 import { playerCar } from './player.js';
 
 export const SCREEN_TITLE = 'title';
@@ -45,16 +46,48 @@ export function buildGround(city) {
   }
   ctx.fillStyle = PALETTE.sand;
   ctx.fillRect(0, WORLD.beachY, WORLD.width, WORLD.height - WORLD.beachY);
+  // Bay water: the edge follows the coast curve (waterYAt), not a straight
+  // line — the same curve the maps draw, so ground, minimap and full map agree.
   ctx.fillStyle = PALETTE.water;
-  ctx.fillRect(0, WORLD.waterY, WORLD.width, WORLD.height - WORLD.waterY);
+  ctx.beginPath();
+  ctx.moveTo(0, WORLD.height);
+  for (let x = 0; x <= WORLD.width; x += 8) ctx.lineTo(x, waterYAt(x));
+  ctx.lineTo(WORLD.width, WORLD.height);
+  ctx.closePath();
+  ctx.fill();
+  // Foam line along the water edge.
   ctx.strokeStyle = 'rgba(255,255,255,0.5)';
   ctx.lineWidth = 3;
-  for (let x = 0; x < WORLD.width; x += 90) {
-    ctx.beginPath();
-    ctx.moveTo(x, WORLD.waterY + 14);
-    ctx.quadraticCurveTo(x + 22, WORLD.waterY + 6, x + 45, WORLD.waterY + 14);
-    ctx.stroke();
+  ctx.beginPath();
+  for (let x = 0; x <= WORLD.width; x += 8) {
+    if (x === 0) ctx.moveTo(x, waterYAt(x));
+    else ctx.lineTo(x, waterYAt(x));
   }
+  ctx.stroke();
+  // The river: a wide, deep channel with sandy banks and a bright current,
+  // so it reads as a river — not a canal — on the map and in 3D. Deeper
+  // than the bay (dark main water, bright centre flow), and it meets the
+  // bay at the coast curve, extended a little past it so the mouth never
+  // gaps where the coast wave dips.
+  const riverTop = 24;
+  const riverBottom = waterYAt(1920) + 30;
+  const riverLen = riverBottom - riverTop;
+  const riverCx = (RIVER.x0 + RIVER.x1) / 2;
+  ctx.fillStyle = PALETTE.sand;
+  ctx.fillRect(RIVER.x0 - 8, riverTop, 8, riverLen);
+  ctx.fillRect(RIVER.x1, riverTop, 8, riverLen);
+  ctx.fillStyle = PALETTE.deepWater;
+  ctx.fillRect(RIVER.x0, riverTop, RIVER.x1 - RIVER.x0, riverLen);
+  ctx.fillStyle = PALETTE.water;
+  ctx.fillRect(riverCx - 16, riverTop, 32, riverLen);
+  ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+  ctx.lineWidth = 3;
+  ctx.setLineDash([18, 14]);
+  ctx.beginPath();
+  ctx.moveTo(riverCx, riverTop);
+  ctx.lineTo(riverCx, riverBottom);
+  ctx.stroke();
+  ctx.setLineDash([]);
   ctx.fillStyle = PALETTE.asphalt;
   const half = WORLD.roadWidth / 2;
   for (const x of city.xs) ctx.fillRect(x - half, 0, WORLD.roadWidth, WORLD.beachY);
@@ -94,6 +127,65 @@ export function buildGround(city) {
     ['SUNSET ROW', 900, city.ys[3]],
   ];
   for (const [text, x, y] of labels) ctx.fillText(text, x, y);
+  // Bridges: a deck over the river at every road crossing, drawn last so
+  // each one reads as a bridge — not a road that happens to continue.
+  // The landmark (Coral Boulevard) is a wider gold deck whose edges bow
+  // out at mid-river, an arch in plan, with white rails and posts; the
+  // rest are pale concrete decks with white rails and a gold centre line.
+  const bow = 20; // control-point offset; the edge bulges bow/2 at mid-river
+  for (const { y, landmark } of bridgeCrossings(city)) {
+    const half = landmark ? BRIDGE_DECK.landmark : BRIDGE_DECK.standard;
+    const over = landmark ? BRIDGE_DECK.landmarkOverhang : BRIDGE_DECK.overhang;
+    const bx0 = RIVER.x0 - over;
+    const bx1 = RIVER.x1 + over;
+    ctx.fillStyle = landmark ? '#e9c46a' : '#8d8578';
+    if (landmark) {
+      ctx.beginPath();
+      ctx.moveTo(bx0, y - half);
+      ctx.quadraticCurveTo(riverCx, y - half - bow, bx1, y - half);
+      ctx.lineTo(bx1, y + half);
+      ctx.quadraticCurveTo(riverCx, y + half + bow, bx0, y + half);
+      ctx.closePath();
+      ctx.fill();
+    } else {
+      ctx.fillRect(bx0, y - half, bx1 - bx0, half * 2);
+    }
+    // White rails along both deck edges (following the bow on the landmark).
+    ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    if (landmark) {
+      ctx.moveTo(bx0, y - half + 3);
+      ctx.quadraticCurveTo(riverCx, y - half - bow + 3, bx1, y - half + 3);
+      ctx.moveTo(bx0, y + half - 3);
+      ctx.quadraticCurveTo(riverCx, y + half + bow - 3, bx1, y + half - 3);
+    } else {
+      ctx.moveTo(bx0, y - half + 3);
+      ctx.lineTo(bx1, y - half + 3);
+      ctx.moveTo(bx0, y + half - 3);
+      ctx.lineTo(bx1, y + half - 3);
+    }
+    ctx.stroke();
+    // Centre line: the road continues over the deck.
+    ctx.strokeStyle = landmark ? '#4a4a52' : '#e9c46a';
+    ctx.lineWidth = 3;
+    ctx.setLineDash([26, 22]);
+    ctx.beginPath();
+    ctx.moveTo(bx0, y);
+    ctx.lineTo(bx1, y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    // Posts on the landmark rails, on the bowed curve.
+    if (landmark) {
+      ctx.fillStyle = '#fff';
+      for (const t of [0.25, 0.5, 0.75]) {
+        const px = bx0 + (bx1 - bx0) * t;
+        const bulge = 2 * bow * (1 - t) * t;
+        ctx.beginPath(); ctx.arc(px, y - half - bulge + 3, 4, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(px, y + half + bulge - 3, 4, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+  }
   return canvas;
 }
 
@@ -130,35 +222,107 @@ export function createRenderer(canvas) {
     return { x: sx - view.w / 2 + cam.x + shakeX, y: sy - view.h / 2 + cam.y + shakeY };
   }
 
-  function drawBuilding(b, time) {
-    const lift = b.height * 0.58;
+  /** One extruded box: shadow, two shaded sides, top face with windows.
+   * The box's ground footprint is (x, y, w, h); its top face is shifted
+   * up by the extrusion lift. Small boxes (thin L arms, narrow tiers)
+   * skip the fixed-size window grid so no window can stick out. */
+  function drawBox(x, y, w, h, height, color, time, sign) {
+    const lift = height * 0.58;
     ctx.fillStyle = PALETTE.shadow;
-    ctx.fillRect(b.x + 9, b.y + 9, b.w, b.h);
-    ctx.fillStyle = shade(b.color, -42);
-    ctx.fillRect(b.x, b.y + b.h - lift * 0.55, b.w, lift * 0.55);
-    ctx.fillStyle = shade(b.color, -24);
-    ctx.fillRect(b.x + b.w - lift * 0.4, b.y, lift * 0.4, b.h);
-    ctx.fillStyle = b.color;
-    ctx.fillRect(b.x, b.y - lift * 0.55, b.w, b.h);
+    ctx.fillRect(x + 9, y + 9, w, h);
+    ctx.fillStyle = shade(color, -42);
+    ctx.fillRect(x, y + h - lift * 0.55, w, lift * 0.55);
+    ctx.fillStyle = shade(color, -24);
+    ctx.fillRect(x + w - lift * 0.4, y, lift * 0.4, h);
+    ctx.fillStyle = color;
+    ctx.fillRect(x, y - lift * 0.55, w, h);
     ctx.strokeStyle = 'rgba(0,0,0,0.3)';
     ctx.lineWidth = 2;
-    ctx.strokeRect(b.x, b.y - lift * 0.55, b.w, b.h);
-    ctx.fillStyle = shade(b.color, -14);
-    ctx.fillRect(b.x + b.w * 0.32, b.y - lift * 0.55 + b.h * 0.3, b.w * 0.22, b.h * 0.24);
-    ctx.fillStyle = 'rgba(255,255,255,0.4)';
-    const cols = Math.max(1, Math.floor(b.w / 26));
-    const rows = Math.max(1, Math.floor(b.h / 26));
-    for (let i = 0; i < cols; i += 1) {
-      for (let j = 0; j < rows; j += 1) {
-        if ((i + j) % 2 === 0) ctx.fillRect(b.x + 8 + i * 26, b.y - lift * 0.55 + 8 + j * 26, 12, 10);
+    ctx.strokeRect(x, y - lift * 0.55, w, h);
+    ctx.fillStyle = shade(color, -14);
+    ctx.fillRect(x + w * 0.32, y - lift * 0.55 + h * 0.3, w * 0.22, h * 0.24);
+    if (w >= 24 && h >= 24) {
+      ctx.fillStyle = 'rgba(255,255,255,0.4)';
+      const cols = Math.max(1, Math.floor(w / 26));
+      const rows = Math.max(1, Math.floor(h / 26));
+      for (let i = 0; i < cols; i += 1) {
+        for (let j = 0; j < rows; j += 1) {
+          if ((i + j) % 2 === 0) ctx.fillRect(x + 8 + i * 26, y - lift * 0.55 + 8 + j * 26, 12, 10);
+        }
       }
     }
-    if (b.sign) {
-      const glow = 0.6 + 0.4 * Math.sin(time * 3 + b.x);
-      ctx.fillStyle = b.sign;
+    if (sign) {
+      const glow = 0.6 + 0.4 * Math.sin(time * 3 + x);
+      ctx.fillStyle = sign;
       ctx.globalAlpha = glow;
-      ctx.fillRect(b.x + b.w * 0.2, b.y + b.h - 6, b.w * 0.6, 8);
+      ctx.fillRect(x + w * 0.2, y + h - 6, w * 0.6, 8);
       ctx.globalAlpha = 1;
+    }
+  }
+
+  /** A rooftop feature on the topmost face, so silhouettes differ even
+   * from the chase cam. top is the top face's screen rect. */
+  function drawRoofDetail(top, roof) {
+    const rx = top.x + roof.fx * top.w;
+    const ry = top.y + roof.fy * top.h;
+    if (roof.kind === 'ac') {
+      ctx.fillStyle = '#9aa0a6';
+      ctx.fillRect(rx - 5, ry - 4, 10, 8);
+    } else if (roof.kind === 'antenna') {
+      ctx.strokeStyle = '#3a3a3a';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(rx, ry);
+      ctx.lineTo(rx, ry - 18);
+      ctx.stroke();
+      ctx.fillStyle = '#ff5d8f';
+      ctx.beginPath();
+      ctx.arc(rx, ry - 20, 3, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (roof.kind === 'helipad') {
+      const r = Math.min(top.w, top.h) * 0.3;
+      ctx.fillStyle = '#e8e8e8';
+      ctx.beginPath();
+      ctx.arc(rx, ry, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#e63946';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(rx, ry, r * 0.55, 0, Math.PI * 2);
+      ctx.stroke();
+    } else if (roof.kind === 'garden') {
+      ctx.fillStyle = '#2a7d4f';
+      ctx.fillRect(rx - top.w * 0.2, ry - top.h * 0.2, top.w * 0.4, top.h * 0.4);
+    } else if (roof.kind === 'watertower') {
+      ctx.fillStyle = '#6c757d';
+      ctx.fillRect(rx - 1, ry - 8, 2, 10);
+      ctx.fillStyle = '#adb5bd';
+      ctx.fillRect(rx - 6, ry - 16, 12, 10);
+    }
+  }
+
+  function drawBuilding(b, time) {
+    const baseH = b.height - (b.upper ? b.upper.height : 0);
+    drawBox(b.x, b.y, b.w, b.h, baseH, b.color, time, b.sign);
+    if (b.upper) {
+      const u = b.upper;
+      // The upper tier stands on the base roof: its ground is the base's
+      // top face, shifted up by the base lift; a lighter shade reads as
+      // a separate tier catching the light.
+      const lift = baseH * 0.58;
+      drawBox(u.x, u.y - lift * 0.55, u.w, u.h, u.height, shade(b.color, 16), time, null);
+    }
+    if (b.arm) {
+      const a = b.arm;
+      drawBox(a.x, a.y, a.w, a.h, a.height, b.color, time, null);
+    }
+    if (b.roof) {
+      // Topmost face in screen space: the upper tier's top face, else
+      // the base's top face.
+      const top = b.upper
+        ? { x: b.upper.x, y: b.upper.y - baseH * 0.58 * 0.55 - b.upper.height * 0.58 * 0.55, w: b.upper.w, h: b.upper.h }
+        : { x: b.x, y: b.y - baseH * 0.58 * 0.55, w: b.w, h: b.h };
+      drawRoofDetail(top, b.roof);
     }
   }
 
@@ -195,6 +359,97 @@ export function createRenderer(canvas) {
     }
   }
 
+  /** Street furniture, top-down: each kind reads at a glance, so a
+   * corner never looks like another corner. */
+  function drawProp(prop) {
+    ctx.save();
+    ctx.translate(prop.x, prop.y);
+    if (prop.kind === 'billboard' || prop.kind === 'neon-sign') {
+      ctx.rotate(prop.angle);
+      ctx.fillStyle = '#3a3a3a';
+      ctx.fillRect(-2, -2, 4, 4);
+      ctx.fillStyle = prop.color;
+      ctx.fillRect(-13, -16, 26, 9);
+      ctx.fillStyle = 'rgba(255,255,255,0.75)';
+      ctx.fillRect(-10, -14, 20, 2);
+    } else if (prop.kind === 'vendor') {
+      ctx.rotate(prop.angle);
+      ctx.fillStyle = '#6d4c41';
+      ctx.fillRect(-9, -6, 18, 12);
+      ctx.fillStyle = prop.color;
+      ctx.fillRect(-11, -9, 22, 5);
+      ctx.fillStyle = '#f8f9fa';
+      ctx.fillRect(-11, -9, 7, 5);
+      ctx.fillRect(4, -9, 7, 5);
+    } else if (prop.kind === 'bench') {
+      ctx.fillStyle = prop.color;
+      ctx.fillRect(-11, -4, 22, 4);
+      ctx.fillRect(-11, 2, 22, 4);
+      ctx.fillStyle = '#3a3a3a';
+      ctx.fillRect(-9, -6, 3, 3);
+      ctx.fillRect(6, -6, 3, 3);
+    } else if (prop.kind === 'hydrant') {
+      ctx.fillStyle = prop.color;
+      ctx.beginPath();
+      ctx.arc(0, 0, 5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#f8f9fa';
+      ctx.beginPath();
+      ctx.arc(0, 0, 2, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (prop.kind === 'planter') {
+      ctx.fillStyle = '#8d5524';
+      ctx.beginPath();
+      ctx.arc(0, 0, 8, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = prop.color;
+      ctx.beginPath();
+      ctx.arc(0, 0, 5, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (prop.kind === 'lifeguard') {
+      ctx.strokeStyle = '#8d5524';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(-6, 6);
+      ctx.lineTo(-4, -6);
+      ctx.moveTo(6, 6);
+      ctx.lineTo(4, -6);
+      ctx.stroke();
+      ctx.fillStyle = '#f8f9fa';
+      ctx.fillRect(-8, -12, 16, 8);
+      ctx.fillStyle = prop.color;
+      ctx.fillRect(-9, -15, 18, 4);
+    } else if (prop.kind === 'crate') {
+      ctx.fillStyle = prop.color;
+      ctx.fillRect(-8, -8, 14, 14);
+      ctx.fillStyle = shade(prop.color, -30);
+      ctx.fillRect(-8, -8, 14, 3);
+      ctx.fillRect(-8, -8, 3, 14);
+      ctx.fillStyle = shade(prop.color, 20);
+      ctx.fillRect(2, -14, 10, 10);
+    } else if (prop.kind === 'dockpost') {
+      ctx.fillStyle = '#3a3a3a';
+      ctx.beginPath();
+      ctx.arc(0, 0, 4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#f8f9fa';
+      ctx.beginPath();
+      ctx.arc(0, 0, 2, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (prop.kind === 'picnic') {
+      ctx.fillStyle = prop.color;
+      ctx.fillRect(-12, -5, 24, 10);
+      ctx.fillRect(-12, -10, 24, 3);
+      ctx.fillRect(-12, 7, 24, 3);
+    } else if (prop.kind === 'mailbox') {
+      ctx.fillStyle = prop.color;
+      ctx.fillRect(-5, -7, 10, 14);
+      ctx.fillStyle = '#f8f9fa';
+      ctx.fillRect(-5, -7, 10, 3);
+    }
+    ctx.restore();
+  }
+
   function drawCar(car, state, isPlayer) {
     const spec = VEHICLES[car.kind];
     ctx.save();
@@ -218,9 +473,31 @@ export function createRenderer(canvas) {
     roundRect(ctx, -spec.length / 2, -spec.width / 2, spec.length, spec.width, 8);
     ctx.fill();
     if (car.kind === 'boat') {
-      ctx.fillStyle = '#e63946';
-      roundRect(ctx, -spec.length * 0.18, -spec.width / 2 + 4, spec.length * 0.28, spec.width - 8, 5);
-      ctx.fill();
+      // A speedboat reads as a longer hull with a pale canopy; a skiff
+      // keeps the red cabin.
+      if (car.variant === 'speedboat') {
+        ctx.fillStyle = '#f8f9fa';
+        roundRect(ctx, -spec.length * 0.1, -spec.width / 2 + 3, spec.length * 0.3, spec.width - 6, 6);
+        ctx.fill();
+      } else {
+        ctx.fillStyle = '#e63946';
+        roundRect(ctx, -spec.length * 0.18, -spec.width / 2 + 4, spec.length * 0.28, spec.width - 8, 5);
+        ctx.fill();
+      }
+    }
+    // Police livery, from the car id: 0 = white doors, 1 = white side
+    // stripe, 2 = white roof. Every cruiser reads differently.
+    if (car.kind === 'police') {
+      ctx.fillStyle = '#f8f9fa';
+      if (car.livery === 0) {
+        ctx.fillRect(-7, -spec.width / 2, 14, spec.width);
+      } else if (car.livery === 1) {
+        ctx.fillRect(-spec.length * 0.3, -spec.width / 2, spec.length * 0.6, 3);
+        ctx.fillRect(-spec.length * 0.3, spec.width / 2 - 3, spec.length * 0.6, 3);
+      } else {
+        roundRect(ctx, spec.length * 0.05, -spec.width / 2 + 3, spec.length * 0.3, spec.width - 6, 4);
+        ctx.fill();
+      }
     }
     ctx.fillStyle = 'rgba(255,255,255,0.35)';
     roundRect(ctx, spec.length * 0.08, -spec.width / 2 + 3, spec.length * 0.22, spec.width - 6, 4);
@@ -228,6 +505,29 @@ export function createRenderer(canvas) {
     ctx.fillStyle = shade(car.color, -30);
     roundRect(ctx, -spec.length * 0.28, -spec.width / 2 + 4, spec.length * 0.3, spec.width - 8, 5);
     ctx.fill();
+    // Body shapes: a truck carries an open bed, a van is a tall box, a
+    // coupe and a sports car wear a rear spoiler, a hatch is short
+    // with its cabin forward.
+    if (car.kind === 'truck') {
+      ctx.fillStyle = shade(car.color, -45);
+      ctx.fillRect(-spec.length / 2 + 2, -spec.width / 2 + 3, spec.length * 0.34, spec.width - 6);
+      ctx.fillStyle = shade(car.color, 20);
+      ctx.fillRect(-spec.length / 2 + 2, -spec.width / 2 + 3, spec.length * 0.34, 3);
+      ctx.fillRect(-spec.length / 2 + 2, spec.width / 2 - 6, spec.length * 0.34, 3);
+      ctx.fillRect(-spec.length * 0.16, -spec.width / 2 + 3, 3, spec.width - 6);
+    } else if (car.kind === 'van') {
+      ctx.fillStyle = shade(car.color, -18);
+      roundRect(ctx, -spec.length * 0.32, -spec.width / 2 + 3, spec.length * 0.62, spec.width - 6, 4);
+      ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,0.25)';
+      ctx.fillRect(-spec.length * 0.32, -spec.width / 2 + 3, spec.length * 0.62, 3);
+    } else if (car.kind === 'sports' || car.kind === 'coupe') {
+      ctx.fillStyle = '#222';
+      ctx.fillRect(-spec.length / 2 - 1, -spec.width / 2 + 1, 4, spec.width - 2);
+    } else if (car.kind === 'hatch') {
+      ctx.fillStyle = car.color;
+      ctx.fillRect(spec.length * 0.19, -spec.width / 2 + 3, spec.length * 0.11, spec.width - 6);
+    }
     if (car.kind !== 'boat') {
       ctx.fillStyle = '#fff8d6';
       ctx.fillRect(spec.length / 2 - 4, -spec.width / 2 + 4, 4, 5);
@@ -271,6 +571,9 @@ export function createRenderer(canvas) {
   }
 
   function drawPerson(ped, isPlayer, time) {
+    // Every person reads differently: height, build, trousers, hat.
+    const scale = ped.scale ?? 1;
+    const build = ped.build ?? 1;
     const bob = Math.sin(ped.phase || 0) * 1.5;
     // A jump lifts the body off its ground shadow; cover crouches
     // it behind a dark wall line.
@@ -282,16 +585,16 @@ export function createRenderer(canvas) {
     if (deadFade < 1) ctx.globalAlpha = deadFade;
     ctx.fillStyle = PALETTE.shadow;
     ctx.beginPath();
-    ctx.ellipse(ped.x + 3, ped.y + 7, 11, 6, 0, 0, Math.PI * 2);
+    ctx.ellipse(ped.x + 3, ped.y + 7, 11 * scale, 6 * scale, 0, 0, Math.PI * 2);
     ctx.fill();
     if (ped.down > 0) {
       ctx.fillStyle = ped.shirt;
       ctx.beginPath();
-      ctx.ellipse(ped.x, ped.y, 13, 7, ped.angle, 0, Math.PI * 2);
+      ctx.ellipse(ped.x, ped.y, 13 * scale, 7 * scale, ped.angle, 0, Math.PI * 2);
       ctx.fill();
       ctx.fillStyle = ped.skin;
       ctx.beginPath();
-      ctx.arc(ped.x + Math.cos(ped.angle) * 12, ped.y + Math.sin(ped.angle) * 12, 5, 0, Math.PI * 2);
+      ctx.arc(ped.x + Math.cos(ped.angle) * 12 * scale, ped.y + Math.sin(ped.angle) * 12 * scale, 5 * scale, 0, Math.PI * 2);
       ctx.fill();
       if (deadFade < 1) ctx.globalAlpha = 1;
       return;
@@ -308,13 +611,32 @@ export function createRenderer(canvas) {
       ctx.lineTo(bx + px * 16, by + py * 16);
       ctx.stroke();
     }
+    // Legs: a sliver of trousers trailing behind the torso, so an outfit
+    // reads as more than a shirt colour.
+    ctx.fillStyle = ped.pants ?? '#3d405b';
+    ctx.beginPath();
+    ctx.ellipse(ped.x - Math.cos(ped.angle) * 9 * scale, ped.y - Math.sin(ped.angle) * 9 * scale, 6 * scale, 3.5 * scale, ped.angle, 0, Math.PI * 2);
+    ctx.fill();
+    // Torso: an ellipse across the shoulders (build widens it), so slim
+    // and broad people read differently even from above.
     ctx.fillStyle = ped.shirt;
     ctx.beginPath();
-    ctx.arc(ped.x, ped.y - lift + bob * 0.3, bodyR, 0, Math.PI * 2);
+    ctx.ellipse(ped.x, ped.y - lift + bob * 0.3, bodyR * scale * build, bodyR * scale, ped.angle + Math.PI / 2, 0, Math.PI * 2);
     ctx.fill();
+    // A wide-brim hat reads from above as a brim around the head.
+    const hatColor = isPlayer ? '#ffb703' : ped.kind === 'cop' ? '#14213d' : (ped.hatColor ?? '#333');
+    const hat = isPlayer ? (ped.hat ?? 'cap') : ped.kind === 'cop' ? 'cap' : (ped.hat ?? 'none');
+    const hx = ped.x;
+    const hy = ped.y - 2 - lift + bob * 0.3;
+    if (hat === 'wide') {
+      ctx.fillStyle = hatColor;
+      ctx.beginPath();
+      ctx.ellipse(hx, hy, 10 * scale, 5.5 * scale, ped.angle, 0, Math.PI * 2);
+      ctx.fill();
+    }
     ctx.fillStyle = ped.skin;
     ctx.beginPath();
-    ctx.arc(ped.x, ped.y - 2 - lift + bob * 0.3, 6, 0, Math.PI * 2);
+    ctx.arc(hx, hy, 6 * scale, 0, Math.PI * 2);
     ctx.fill();
     if (ped.swimming) {
       ctx.strokeStyle = 'rgba(33, 158, 188, 0.75)';
@@ -323,17 +645,25 @@ export function createRenderer(canvas) {
       ctx.ellipse(ped.x, ped.y + 4, 14, 7, 0, 0, Math.PI * 2);
       ctx.stroke();
     }
-    if (ped.kind === 'cop') {
-      ctx.fillStyle = '#14213d';
+    // Hats: a cap or a beanie over the top of the head. Cops keep their
+    // dark cap, the player keeps the gold one; walkers wear theirs.
+    if (hat === 'cap') {
+      ctx.fillStyle = hatColor;
       ctx.beginPath();
-      ctx.arc(ped.x, ped.y - 4 - lift + bob * 0.3, 6, Math.PI, Math.PI * 2);
+      ctx.arc(hx, hy - 2, 6 * scale, Math.PI, Math.PI * 2);
+      ctx.fill();
+    } else if (hat === 'beanie') {
+      ctx.fillStyle = hatColor;
+      ctx.beginPath();
+      ctx.arc(hx, hy, 6.8 * scale, Math.PI * 0.75, Math.PI * 2.25);
+      ctx.fill();
+    } else if (hat === 'wide') {
+      ctx.fillStyle = hatColor;
+      ctx.beginPath();
+      ctx.arc(hx, hy - 2, 5 * scale, Math.PI, Math.PI * 2);
       ctx.fill();
     }
     if (isPlayer) {
-      ctx.fillStyle = '#ffb703';
-      ctx.beginPath();
-      ctx.arc(ped.x, ped.y - 4 - lift + bob * 0.3, 6, Math.PI, Math.PI * 2);
-      ctx.fill();
       ctx.strokeStyle = '#fff';
       ctx.lineWidth = 2.5;
       ctx.beginPath();
@@ -345,6 +675,16 @@ export function createRenderer(canvas) {
       ctx.moveTo(ped.x, ped.y - lift);
       ctx.lineTo(ped.x + Math.cos(ped.angle) * 22, ped.y - lift + Math.sin(ped.angle) * 22);
       ctx.stroke();
+    }
+    // A named local gets their name above their head.
+    if (ped.name) {
+      ctx.font = `700 11px ${FONT}`;
+      ctx.textAlign = 'center';
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = 'rgba(0,0,0,0.75)';
+      ctx.strokeText(ped.name, ped.x, ped.y - 24 * scale);
+      ctx.fillStyle = '#fff';
+      ctx.fillText(ped.name, ped.x, ped.y - 24 * scale);
     }
     if (deadFade < 1) ctx.globalAlpha = 1;
     void time;
@@ -537,6 +877,14 @@ export function createRenderer(canvas) {
       ctx.lineWidth = 2;
       ctx.strokeRect(RACE.start.x - 10, RACE.start.y - 10, 20, 20);
     }
+    // Crew-job starts: gold markers at the jobs that can be started now.
+    for (const p of crewJobStartPoints(state)) {
+      ctx.fillStyle = '#ffb703';
+      ctx.fillRect(p.x - 10, p.y - 10, 20, 20);
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(p.x - 10, p.y - 10, 20, 20);
+    }
     for (const lamp of state.city.lamps) {
       if (!visible(lamp.x, lamp.y)) continue;
       ctx.fillStyle = '#3a3a3a';
@@ -560,17 +908,29 @@ export function createRenderer(canvas) {
       ctx.fillStyle = '#fff';
       roundRect(ctx, -26, -9, 52, 18, 8);
       ctx.fill();
-      ctx.fillStyle = '#e63946';
-      ctx.fillRect(-8, -6, 16, 12);
+      if (boat.variant === 'speedboat') {
+        ctx.fillStyle = '#8ecae6';
+        roundRect(ctx, -6, -6, 18, 12, 5);
+        ctx.fill();
+      } else {
+        ctx.fillStyle = '#e63946';
+        ctx.fillRect(-8, -6, 16, 12);
+      }
       ctx.restore();
     }
 
     const drawables = [];
     for (const b of state.city.buildings) {
-      if (visible(b.x + b.w / 2, b.y + b.h / 2)) drawables.push({ y: b.y + b.h, fn: () => drawBuilding(b, state.time) });
+      // Depth key is the union's south edge, so an L arm reaching south
+      // of its base still sorts in front of what it overlaps.
+      const south = Math.max(b.y + b.h, b.arm ? b.arm.y + b.arm.h : 0);
+      if (visible(b.x + b.w / 2, b.y + b.h / 2)) drawables.push({ y: south, fn: () => drawBuilding(b, state.time) });
     }
     for (const tree of state.city.trees) {
       if (visible(tree.x, tree.y)) drawables.push({ y: tree.y, fn: () => drawTree(tree) });
+    }
+    for (const prop of state.city.props) {
+      if (visible(prop.x, prop.y)) drawables.push({ y: prop.y, fn: () => drawProp(prop) });
     }
     const heroCar = playerCar(state);
     for (const car of state.cars) {

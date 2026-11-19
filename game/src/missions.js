@@ -5,6 +5,9 @@
 // the game, and briefs the next one.
 import { addWanted } from './police.js';
 import { minigameObjective } from './minigames.js';
+import { createCar, playerCar } from './player.js';
+import { hasLineOfSight } from './world.js';
+import { characterById } from './config.js';
 
 export const MISSION_COUNT = 9;
 
@@ -207,6 +210,29 @@ export function currentStep(state) {
 
 export function missionMarker(state) {
   if (state.race && state.race.active) return RACE.checkpoints[state.race.index];
+  const cj = state.crewJob;
+  if (cj && cj.active) {
+    const job = CREW_JOBS[cj.index];
+    if (job) {
+      if (job.type === 'tail' && cj.target) return { x: cj.target.x, y: cj.target.y };
+      if (job.type === 'stealth') return job.target;
+      if (job.type === 'boat') {
+        if (cj.step === 0) {
+          // Point at the nearest skiff until Lena is aboard.
+          let best = null;
+          let bestD = Infinity;
+          for (const car of state.cars) {
+            if (car.kind !== 'boat') continue;
+            const d = Math.hypot(car.x - state.player.x, car.y - state.player.y);
+            if (d < bestD) { bestD = d; best = car; }
+          }
+          return best ? { x: best.x, y: best.y } : job.target;
+        }
+        return job.target;
+      }
+      if (job.type === 'sabotage') return job.boxes[Math.min(cj.boxesDone, job.boxes.length - 1)];
+    }
+  }
   const mission = currentMission(state);
   if (mission) {
     for (let i = state.mission.stepIndex; i < mission.steps.length; i += 1) {
@@ -224,6 +250,22 @@ export function objectiveText(state) {
   }
   if (state.race && state.race.active) {
     return `Street race — checkpoint ${state.race.index + 1}/4 — ${Math.ceil(state.race.timerLeft)}s left`;
+  }
+  if (state.crewJob && state.crewJob.active) {
+    const job = CREW_JOBS[state.crewJob.index];
+    if (job) {
+      if (job.type === 'tail') return `Crew: ${job.title} — tail the sedan 45–220u — ${Math.ceil(state.crewJob.timerLeft)}s left`;
+      if (job.type === 'stealth') return `Crew: ${job.title} — reach the marina crate unseen`;
+      if (job.type === 'boat') {
+        return state.crewJob.step === 0
+          ? `Crew: ${job.title} — get in a skiff — ${Math.ceil(state.crewJob.timerLeft)}s left`
+          : `Crew: ${job.title} — lighthouse pier — ${Math.ceil(state.crewJob.timerLeft)}s left`;
+      }
+      if (job.type === 'sabotage') {
+        const hold = state.crewJob.holdTimer > 0 ? `, hold ${state.crewJob.holdTimer.toFixed(1)}s/2s` : '';
+        return `Crew: ${job.title} — box ${state.crewJob.boxesDone + 1}/3${hold}, ${state.wanted.level}★ heat`;
+      }
+    }
   }
   const mission = currentMission(state);
   const step = currentStep(state);
@@ -397,7 +439,7 @@ export function updateRace(state, dt, events) {
   if (race.cooldown > 0) race.cooldown -= dt;
   if (!race.active) {
     if (
-      !state.mission.started && race.cooldown <= 0 && !state.player.onFoot
+      !state.mission.started && !(state.crewJob && state.crewJob.active) && race.cooldown <= 0 && !state.player.onFoot
       && Math.hypot(state.player.x - RACE.start.x, state.player.y - RACE.start.y) < 70
     ) {
       race.active = true;
@@ -458,7 +500,7 @@ export function createSideJob() {
 export function updateSideJobs(state, dt, events) {
   const job = state.sideJob;
   if (!job.active) {
-    if (state.player.onFoot) {
+    if (state.player.onFoot && !(state.crewJob && state.crewJob.active)) {
       for (const stand of state.city.taxiStands) {
         if (Math.hypot(state.player.x - stand.x, state.player.y - stand.y) < 46) {
           const drop = state.rng.pick(state.city.taxiStands.filter((s) => s !== stand));
@@ -532,7 +574,7 @@ export function updateRandomEvent(state, dt, events) {
   }
   ev.cooldown -= dt;
   if (ev.cooldown > 0) return;
-  if (state.mission.started || state.wanted.level > 0 || (state.race && state.race.active)) return;
+  if (state.mission.started || (state.crewJob && state.crewJob.active) || state.wanted.level > 0 || (state.race && state.race.active)) return;
   // Spawn a thief on a nearby road, running from Lena.
   const player = state.player;
   const angle = state.rng.range(0, Math.PI * 2);
@@ -561,4 +603,311 @@ export function updateRandomEvent(state, dt, events) {
   ev.ped = thief;
   ev.timerLeft = 60;
   events.push({ type: 'toast', text: 'A thief snatched a purse! Catch them before they get away!' });
+}
+
+// --- Crew jobs: four one-time jobs from Dario's board, one per crew
+// member's voice and way of working. They unlock with the safehouse
+// (three story jobs done) and start at their gold markers — walk or
+// drive into one as the right character. Each has its own fail rule:
+// the tail is lost or made, the stealth job is blown by a patrol's
+// eyes, the boat run is a clock, the sabotage stacks its own heat.
+// Busted or wasted blows an active crew job (see crewJobArrested).
+// The nine story jobs above are untouched: same list, same pay.
+export const CREW_JOBS = [
+  {
+    title: 'Shadow Run',
+    crew: 'lena',
+    reward: 400,
+    type: 'tail',
+    clock: 16 * 60 + 40,
+    brief: "Tail the purple sedan for 45s — closer than 45 and you're made, further than 220 for 5s and he's gone.",
+    start: { x: 2720, y: 1120 },
+    waypoints: [
+      { x: 2720, y: 1120 },
+      { x: 2720, y: 480 },
+      { x: 2080, y: 480 },
+      { x: 2080, y: 1120 },
+    ],
+    spawn: { x: 2720, y: 960 },
+    spawnWp: 1,
+    speed: 190,
+    time: 45,
+  },
+  {
+    title: 'Quiet Hands',
+    crew: 'ivy',
+    reward: 450,
+    type: 'stealth',
+    clock: 19 * 60 + 30,
+    brief: 'The crate at the marina is Dario\'s, and a patrol car is circling it. Reach the crate on foot — if that patrol sees you, the job is blown.',
+    start: { x: 2400, y: 1760 },
+    target: { x: 2960, y: 1760 },
+    patrol: {
+      spawn: { x: 2720, y: 2080 },
+      waypoints: [
+        { x: 2720, y: 2080 },
+        { x: 3040, y: 2080 },
+        { x: 3040, y: 1760 },
+        { x: 2720, y: 1760 },
+      ],
+      speed: 150,
+    },
+  },
+  {
+    title: 'Harbor Sprint',
+    crew: 'marco',
+    reward: 500,
+    type: 'boat',
+    clock: 18 * 60 + 30,
+    brief: 'Take a skiff from the marina and run the package to the lighthouse pier — 75 seconds, and the water is the only road.',
+    start: { x: 2960, y: 2080 },
+    target: { x: 220, y: 2320 },
+    time: 75,
+  },
+  {
+    title: 'Cut the Lights',
+    crew: 'marco',
+    reward: 550,
+    type: 'sabotage',
+    clock: 22 * 60,
+    brief: 'Three junction boxes, three alarms. Cut them all — each one wakes the precinct a little more. Three stars and the job is blown. Start clean.',
+    start: { x: 2080, y: 1120 },
+    boxes: [
+      { x: 1120, y: 480 },
+      { x: 2400, y: 800 },
+      { x: 1440, y: 1440 },
+    ],
+  },
+];
+
+export function createCrewJobState() {
+  return {
+    active: false,
+    index: -1,
+    step: 0,
+    timerLeft: 0,
+    done: [],
+    target: null,
+    lostTimer: 0,
+    holdTimer: 0,
+    boxesDone: 0,
+    lastWarn: -1e9,
+  };
+}
+
+/** Jobs open to start right now: unlocked, unfinished, none running. */
+export function crewJobsAvailable(state) {
+  if (!state.progress.safehouse) return [];
+  return CREW_JOBS.map((_, i) => i).filter((i) => !state.crewJob.done.includes(i));
+}
+
+/** Start points of the jobs that can be started now — the gold
+ * markers the renderers and the minimap draw. */
+export function crewJobStartPoints(state) {
+  if (!state.crewJob || state.crewJob.active) return [];
+  return crewJobsAvailable(state).map((i) => CREW_JOBS[i].start);
+}
+
+/** Drive a car along axis-aligned waypoints (all on roads), so a tail
+ * or patrol car never cuts a corner through a building. */
+function driveWaypoints(car, waypoints, speed, dt) {
+  const wp = waypoints[car.wpIndex % waypoints.length];
+  const dx = wp.x - car.x;
+  const dy = wp.y - car.y;
+  if (Math.hypot(dx, dy) < 30) {
+    car.wpIndex = (car.wpIndex + 1) % waypoints.length;
+    return;
+  }
+  if (Math.abs(dx) >= Math.abs(dy)) {
+    car.x += Math.sign(dx) * Math.min(speed * dt, Math.abs(dx));
+    car.angle = dx > 0 ? 0 : Math.PI;
+  } else {
+    car.y += Math.sign(dy) * Math.min(speed * dt, Math.abs(dy));
+    car.angle = dy > 0 ? Math.PI / 2 : -Math.PI / 2;
+  }
+  car.speed = speed;
+  car.vx = Math.cos(car.angle) * speed;
+  car.vy = Math.sin(car.angle) * speed;
+}
+
+export function startCrewJob(state, index, events) {
+  const job = CREW_JOBS[index];
+  const cj = state.crewJob;
+  if (!job || !cj || cj.active) return false;
+  if (!state.progress.safehouse || cj.done.includes(index)) return false;
+  if (state.mission.started || (state.race && state.race.active) || (state.minigame && state.minigame.active)) return false;
+  cj.active = true;
+  cj.index = index;
+  cj.step = 0;
+  cj.timerLeft = job.time || 0;
+  cj.lostTimer = 0;
+  cj.holdTimer = 0;
+  cj.boxesDone = 0;
+  cj.target = null;
+  if (typeof job.clock === 'number') state.clockMinutes = job.clock;
+  if (job.type === 'tail') {
+    const car = createCar('sedan', job.spawn.x, job.spawn.y, -Math.PI / 2, 'tail');
+    car.color = '#7b2cbf';
+    car.wpIndex = job.spawnWp;
+    car.speed = job.speed;
+    car.cruise = job.speed;
+    state.cars.push(car);
+    cj.target = car;
+  }
+  if (job.type === 'stealth') {
+    const car = createCar('police', job.patrol.spawn.x, job.patrol.spawn.y, 0, 'patrol');
+    car.wpIndex = 1;
+    car.speed = job.patrol.speed;
+    car.cruise = job.patrol.speed;
+    state.cars.push(car);
+    cj.target = car;
+  }
+  events.push({ type: 'toast', text: `Crew job — ${job.title} (${characterById(job.crew).name}): ${job.brief}` });
+  return true;
+}
+
+function endCrewJob(state, index, events, ok, reason) {
+  const cj = state.crewJob;
+  const job = CREW_JOBS[index];
+  if (cj.target) {
+    state.cars = state.cars.filter((c) => c !== cj.target);
+    cj.target = null;
+  }
+  cj.active = false;
+  cj.index = -1;
+  cj.step = 0;
+  cj.timerLeft = 0;
+  cj.lostTimer = 0;
+  cj.holdTimer = 0;
+  cj.boxesDone = 0;
+  if (ok && job) {
+    state.player.money += job.reward;
+    state.progress.rep += 15;
+    state.stats.crewDone = (state.stats.crewDone || 0) + 1;
+    if (!cj.done.includes(index)) cj.done.push(index);
+    events.push({ type: 'toast', text: `Crew job done — ${job.title}! +$${job.reward}, +15 REP.` });
+    events.push({ type: 'chime' });
+  } else if (job) {
+    events.push({ type: 'toast', text: `${job.title} failed — ${reason}` });
+  }
+}
+
+export function updateCrewJobs(state, dt, events) {
+  const cj = state.crewJob;
+  if (!cj) return;
+  if (!cj.active) {
+    // Start a crew job by walking or driving into its gold marker —
+    // only as the right character, and never mid-job, mid-race or
+    // mid-minigame. The wrong character gets a nudge, throttled.
+    if (state.mission.started || (state.race && state.race.active) || (state.minigame && state.minigame.active)) return;
+    for (const i of crewJobsAvailable(state)) {
+      const job = CREW_JOBS[i];
+      if (Math.hypot(state.player.x - job.start.x, state.player.y - job.start.y) > 55) continue;
+      if (state.character !== job.crew) {
+        if (state.time - cj.lastWarn > 5) {
+          cj.lastWarn = state.time;
+          events.push({ type: 'toast', text: `That's ${characterById(job.crew).name}'s job — switch to ${characterById(job.crew).name.split(' ')[0]} at the safehouse.` });
+        }
+        continue;
+      }
+      startCrewJob(state, i, events);
+      return;
+    }
+    return;
+  }
+  const job = CREW_JOBS[cj.index];
+  if (!job) { cj.active = false; return; }
+  if (job.type === 'tail') {
+    const target = cj.target;
+    if (!target) { endCrewJob(state, cj.index, events, false, 'the courier vanished'); return; }
+    driveWaypoints(target, job.waypoints, job.speed, dt);
+    const d = Math.hypot(state.player.x - target.x, state.player.y - target.y);
+    if (d < 45) { endCrewJob(state, cj.index, events, false, "spotted — you got too close"); return; }
+    if (d > 220) {
+      cj.lostTimer += dt;
+      if (cj.lostTimer > 5) { endCrewJob(state, cj.index, events, false, 'lost the tail'); return; }
+    } else {
+      cj.lostTimer = 0;
+    }
+    cj.timerLeft -= dt;
+    if (cj.timerLeft <= 0) endCrewJob(state, cj.index, events, true);
+    return;
+  }
+  if (job.type === 'stealth') {
+    const patrol = cj.target;
+    if (patrol) driveWaypoints(patrol, job.patrol.waypoints, job.patrol.speed, dt);
+    const player = state.player;
+    if (patrol && Math.hypot(player.x - patrol.x, player.y - patrol.y) < 300
+      && hasLineOfSight(state.city, patrol.x, patrol.y, player.x, player.y)) {
+      endCrewJob(state, cj.index, events, false, 'the patrol saw you');
+      return;
+    }
+    if (player.onFoot && Math.hypot(player.x - job.target.x, player.y - job.target.y) < 60) {
+      endCrewJob(state, cj.index, events, true);
+    }
+    return;
+  }
+  if (job.type === 'boat') {
+    cj.timerLeft -= dt;
+    if (cj.timerLeft <= 0) { endCrewJob(state, cj.index, events, false, 'out of time — the tide turned'); return; }
+    const car = playerCar(state);
+    if (cj.step === 0) {
+      if (car && car.kind === 'boat') { cj.step = 1; events.push({ type: 'step-done' }); }
+      return;
+    }
+    if (car && car.kind === 'boat' && Math.hypot(state.player.x - job.target.x, state.player.y - job.target.y) < 90) {
+      endCrewJob(state, cj.index, events, true);
+    }
+    return;
+  }
+  if (job.type === 'sabotage') {
+    // Three stars at any point blows the job — the alarms stack.
+    if (state.wanted.level >= 3) { endCrewJob(state, cj.index, events, false, 'too hot — the precinct swarmed you'); return; }
+    const box = job.boxes[cj.boxesDone];
+    if (!box) { endCrewJob(state, cj.index, events, true); return; }
+    const player = state.player;
+    if (player.onFoot && Math.hypot(player.x - box.x, player.y - box.y) < 50) {
+      cj.holdTimer += dt;
+      if (cj.holdTimer >= 2) {
+        cj.holdTimer = 0;
+        cj.boxesDone += 1;
+        events.push({ type: 'step-done' });
+        if (cj.boxesDone >= job.boxes.length) {
+          // The last cut finishes the job — and the alarm still goes
+          // off behind you, so the heat is on as you celebrate.
+          addWanted(state, 1, events);
+          events.push({ type: 'toast', text: 'Lights cut — the precinct is coming!' });
+          endCrewJob(state, cj.index, events, true);
+          return;
+        }
+        addWanted(state, 1, events);
+        events.push({ type: 'toast', text: `Junction box ${cj.boxesDone}/3 cut — the PD is coming!` });
+        if (state.wanted.level >= 3) {
+          endCrewJob(state, cj.index, events, false, 'too hot — the precinct swarmed you');
+          return;
+        }
+      }
+    } else {
+      cj.holdTimer = 0;
+    }
+    return;
+  }
+}
+
+/** Busted or wasted blows an active crew job: the target car is pulled
+ * and the job is gone — no pay, no retry from a checkpoint. */
+export function crewJobArrested(state) {
+  const cj = state.crewJob;
+  if (!cj || !cj.active) return;
+  if (cj.target) {
+    state.cars = state.cars.filter((c) => c !== cj.target);
+    cj.target = null;
+  }
+  cj.active = false;
+  cj.index = -1;
+  cj.step = 0;
+  cj.timerLeft = 0;
+  cj.lostTimer = 0;
+  cj.holdTimer = 0;
+  cj.boxesDone = 0;
 }

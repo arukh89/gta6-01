@@ -60,6 +60,8 @@ export function writeSave(state, seed) {
       wanted: state.wanted.level,
       heat: state.wanted.heat,
       completedMissions: [...state.mission.completed],
+      crewDone: [...(state.crewJob ? state.crewJob.done : [])],
+      crewJobsDone: state.stats.crewDone || 0,
       medals: { ...state.progress.medals },
       property: state.progress.property,
       lastSellAt: state.progress.lastSellAt,
@@ -105,6 +107,9 @@ export function applySave(state, data) {
     ? data.completedMissions
     : Array.from({ length: data.missionIndex || 0 }, (_, i) => i);
   state.mission.briefPending = !state.mission.done;
+  // Crew jobs (version 2 saves carry them; older saves start fresh).
+  if (state.crewJob) state.crewJob.done = Array.isArray(data.crewDone) ? [...data.crewDone] : [];
+  state.stats.crewDone = data.crewJobsDone || 0;
   state.progress.medals = data.medals || {};
   state.progress.property = Boolean(data.property);
   state.progress.lastSellAt = typeof data.lastSellAt === 'number' ? data.lastSellAt : -1e9;

@@ -3,7 +3,7 @@
 // the damage and knockback that come with both. Cars are plain objects shared
 // with traffic and police; whoever drives one just sets its driver field.
 import { DRIVE, HEALTH, SWIM, VEHICLES, WALK, WORLD, skillLevel } from './config.js';
-import { resolveBuildingCollision } from './world.js';
+import { isInWater, resolveBuildingCollision } from './world.js';
 import { spawnExplosion, spawnSmoke } from './effects.js';
 
 let nextCarId = 1;
@@ -31,6 +31,10 @@ export function createPlayer(spawn) {
     // colours after a switch (the renderers read these, not a hardcode).
     shirt: '#fb8500',
     skin: '#c68642',
+    pants: '#1d3557',
+    hat: 'cap',
+    scale: 1.0,
+    build: 1.0,
     // Jump height above the ground (0 = on the ground) and its velocity.
     z: 0,
     vz: 0,
@@ -47,8 +51,9 @@ export function createPlayer(spawn) {
 
 export function createCar(type, x, y, angle, driver) {
   const spec = VEHICLES[type];
+  const id = nextCarId++;
   return {
-    id: nextCarId++,
+    id,
     kind: type,
     name: spec.name,
     x,
@@ -68,6 +73,12 @@ export function createCar(type, x, y, angle, driver) {
     // Damage taken while already wrecked; past 40 the car explodes.
     wreckDamage: 0,
     exploded: false,
+    // Police livery: three patrol paint jobs, from the car id alone —
+    // no rng, so the stream is untouched and every cruiser reads
+    // differently. Boats keep kind 'boat' (missions check it) and
+    // vary by variant instead: 'skiff' or 'speedboat'.
+    livery: type === 'police' ? id % 3 : 0,
+    variant: type === 'boat' ? 'skiff' : null,
   };
 }
 
@@ -110,8 +121,8 @@ export function updatePlayerOnFoot(state, input, dt, toWorld) {
   // Stamina skill: each level adds 4% sprint speed (cap +40%).
   const staminaLv = state.progress ? skillLevel(state.progress.stamina, 'stamina') : 0;
   const baseSpeed = input.sprint() ? WALK.sprint * (1 + 0.04 * staminaLv) : WALK.speed;
-  // Swimming: past the shoreline Lena swims at 60% of walk speed.
-  const swimming = player.y >= WORLD.waterY;
+  // Swimming: in the bay or the river Lena swims at 60% of walk speed.
+  const swimming = isInWater(state.city, player.x, player.y);
   const speed = swimming ? baseSpeed * SWIM.speedMult : baseSpeed;
   const len = Math.hypot(steer, throttle);
   player.moving = len > 0;
@@ -127,7 +138,7 @@ export function updatePlayerOnFoot(state, input, dt, toWorld) {
   // Stamina drains in the water and refills on land. With an empty tank
   // health drains slowly until she reaches shore — and the drain counts
   // as a fresh hurt, so regen never out-heals drowning.
-  player.swimming = player.y >= WORLD.waterY;
+  player.swimming = swimming;
   if (player.swimming) {
     player.stamina = Math.max(0, player.stamina - SWIM.drain * dt);
     if (player.stamina <= 0 && player.health > 0) {

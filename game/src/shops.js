@@ -3,8 +3,10 @@
 // buyItem and shows the result. Nothing here touches the document.
 import { playerCar } from './player.js';
 
-/** What the garage pays for a borrowed car, by model. */
-export const SELL_VALUES = { sports: 800, sedan: 300, taxi: 250, pickup: 350, van: 200, police: 0 };
+/** What the garage pays for a borrowed car, by model. New body shapes
+ * pay their class price: a coupe is a sports car, a hatch is a sedan,
+ * a truck is a pickup — no price ever changed, only the shape did. */
+export const SELL_VALUES = { sports: 800, sedan: 300, taxi: 250, pickup: 350, van: 200, police: 0, coupe: 800, hatch: 300, truck: 350 };
 
 /** Sell a borrowed car to the garage: once per game day, by model.
  * Returns null on success, or a short reason when it cannot happen. */

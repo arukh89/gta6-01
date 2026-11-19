@@ -9,7 +9,7 @@ import { createParkedCars, createTraffic, updateTraffic } from './traffic.js';
 import { createPedestrians, updatePedestrians } from './pedestrians.js';
 import { createWanted, updatePolice } from './police.js';
 import { updateCombat } from './combat.js';
-import { createMissionState, updateMissions, updateSideJobs, createSideJob, createRaceState, updateRace, updateUnlocks, createRandomEventState, updateRandomEvent } from './missions.js';
+import { createMissionState, updateMissions, updateSideJobs, createSideJob, createRaceState, updateRace, updateUnlocks, createRandomEventState, updateRandomEvent, createCrewJobState, updateCrewJobs } from './missions.js';
 import { createMinigameState, updateMinigames } from './minigames.js';
 import { spawnCashBurst, updateEffects } from './effects.js';
 import { createCharacterRecords } from './characters.js';
@@ -44,10 +44,13 @@ export function createGameState(cityRng, playRng) {
   const getaway = createCar('sports', 640, 452, 0, 'none');
   getaway.color = '#e63946';
   cars.push(getaway);
-  // Two drivable boats, both in the water: one at the marina, one off
-  // the lighthouse pier. They are world vehicles like traffic (R0b: 39).
+  // Two drivable boats, both in the water: a skiff at the marina and a
+  // speedboat off the lighthouse pier. Same kind ('boat' — missions
+  // check it), different variant, so they read as two different boats.
   cars.push(createCar('boat', 2960, 2320, Math.PI / 2, 'none'));
-  cars.push(createCar('boat', 220, 2320, 0, 'none'));
+  const speedboat = createCar('boat', 220, 2320, 0, 'none');
+  speedboat.variant = 'speedboat';
+  cars.push(speedboat);
   // The crew: Lena opens the game, Ivy and Marco wait at the safehouse.
   // Her perk (level 1 driving) is the live skill line from the start.
   const characters = createCharacterRecords(city.spawn, city.safehouse);
@@ -77,6 +80,7 @@ export function createGameState(cityRng, playRng) {
     totalMinutes: 0,
     randomEvent: createRandomEventState(),
     mission: createMissionState(),
+    crewJob: createCrewJobState(),
     sideJob: createSideJob(),
     race: createRaceState(),
     minigame: createMinigameState(),
@@ -89,7 +93,7 @@ export function createGameState(cityRng, playRng) {
     dusk: false,
     lastPoliceSpawn: -99,
     lastOfficerSpawn: -99,
-    stats: { missionsDone: 0, taxisDone: 0, shotsFired: 0, carsStolen: 0, cashFound: 0, racesWon: 0, eventsSolved: 0 },
+    stats: { missionsDone: 0, taxisDone: 0, shotsFired: 0, carsStolen: 0, cashFound: 0, racesWon: 0, eventsSolved: 0, crewDone: 0 },
   };
 }
 
@@ -212,6 +216,7 @@ export function stepGame(state, input, dt, toWorld) {
   updatePolice(state, wdt, events);
   updateCombat(state, input, wdt, events, toWorld);
   updateMissions(state, wdt, events);
+  updateCrewJobs(state, wdt, events);
   updateSideJobs(state, wdt, events);
   updateMinigames(state, input, wdt, events, toWorld);
   updateRace(state, wdt, events);

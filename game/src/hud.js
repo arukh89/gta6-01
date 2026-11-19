@@ -4,8 +4,8 @@
 // player, the mission marker, police and taxi stands. Text updates are kept
 // cheap: only rewritten when the value shown actually changes.
 import { HEALTH, PALETTE, VEHICLES, WEAPONS, WORLD, characterById, repTitle, skillLevel } from './config.js';
-import { districtNameAt } from './world.js';
-import { MISSION_COUNT, RACE, missionList, missionMarker, objectiveText } from './missions.js';
+import { BRIDGE_DECK, RIVER, bridgeCrossings, districtNameAt, waterYAt } from './world.js';
+import { CREW_JOBS, MISSION_COUNT, RACE, crewJobStartPoints, missionList, missionMarker, objectiveText } from './missions.js';
 import { playerCar } from './player.js';
 
 function el(id) {
@@ -68,14 +68,12 @@ export function createHud() {
 
   // Wavy coastline, drawn the same way on the full map and the minimap:
   // the sand band ends at a straight promenade edge, but the water edge
-  // undulates (deterministic sine in world units, so both maps agree).
+  // follows the shared coast curve (bay + wave), so the maps agree with
+  // the ground the game itself draws.
   function drawCoast(ctx, sx, sy, w, h) {
     ctx.fillStyle = PALETTE.sand;
     ctx.fillRect(0, WORLD.beachY * sy, w, h);
-    const waveY = (x) => {
-      const wx = x / sx;
-      return WORLD.waterY * sy + (Math.sin(wx * 0.004) * 26 + Math.sin(wx * 0.011 + 1.3) * 12) * sy;
-    };
+    const waveY = (x) => waterYAt(x / sx) * sy;
     ctx.fillStyle = PALETTE.water;
     ctx.beginPath();
     ctx.moveTo(0, h);
@@ -94,6 +92,86 @@ export function createHud() {
     ctx.stroke();
   }
 
+  // The river, drawn the same way on the full map and the minimap (before
+  // the roads, so crossings read as bridges). Sandy banks, deeper water
+  // than the bay, a bright centre flow and a white current line.
+  function drawRiver(ctx, sx, sy) {
+    const top = 24 * sy;
+    const bottom = (waterYAt(1920) + 30) * sy;
+    const len = bottom - top;
+    const cx = ((RIVER.x0 + RIVER.x1) / 2) * sx;
+    ctx.fillStyle = PALETTE.sand;
+    ctx.fillRect((RIVER.x0 - 8) * sx, top, 8 * sx, len);
+    ctx.fillRect(RIVER.x1 * sx, top, 8 * sx, len);
+    ctx.fillStyle = PALETTE.deepWater;
+    ctx.fillRect(RIVER.x0 * sx, top, (RIVER.x1 - RIVER.x0) * sx, len);
+    ctx.fillStyle = PALETTE.water;
+    ctx.fillRect(cx - 16 * sx, top, 32 * sx, len);
+    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    ctx.fillRect(cx - Math.max(0.5, sx), top, Math.max(1, 2 * sx), len);
+  }
+
+  // Bridges over the river, drawn the same way on the full map and the
+  // minimap (after the roads, so the decks sit on top): a deck wider than
+  // the road with white rails; the landmark (Coral Boulevard) is a wider
+  // gold deck with bowed edges. `detail` adds rail posts (full map only).
+  function drawBridges(ctx, city, sx, sy, detail) {
+    const bow = 20; // control-point offset; the edge bulges bow/2 at mid-river
+    for (const { y, landmark } of bridgeCrossings(city)) {
+      const half = landmark ? BRIDGE_DECK.landmark : BRIDGE_DECK.standard;
+      const over = landmark ? BRIDGE_DECK.landmarkOverhang : BRIDGE_DECK.overhang;
+      const bx0 = (RIVER.x0 - over) * sx;
+      const bx1 = (RIVER.x1 + over) * sx;
+      const cx = ((RIVER.x0 + RIVER.x1) / 2) * sx;
+      const top = (y - half) * sy;
+      const bot = (y + half) * sy;
+      ctx.fillStyle = landmark ? '#e9c46a' : '#8d8578';
+      if (landmark) {
+        ctx.beginPath();
+        ctx.moveTo(bx0, top);
+        ctx.quadraticCurveTo(cx, top - bow * sy, bx1, top);
+        ctx.lineTo(bx1, bot);
+        ctx.quadraticCurveTo(cx, bot + bow * sy, bx0, bot);
+        ctx.closePath();
+        ctx.fill();
+      } else {
+        ctx.fillRect(bx0, top, bx1 - bx0, bot - top);
+      }
+      ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+      ctx.lineWidth = Math.max(1, 2 * sy);
+      ctx.beginPath();
+      if (landmark) {
+        ctx.moveTo(bx0, top + 3 * sy);
+        ctx.quadraticCurveTo(cx, top - bow * sy + 3 * sy, bx1, top + 3 * sy);
+        ctx.moveTo(bx0, bot - 3 * sy);
+        ctx.quadraticCurveTo(cx, bot + bow * sy - 3 * sy, bx1, bot - 3 * sy);
+      } else {
+        ctx.moveTo(bx0, top + 3 * sy);
+        ctx.lineTo(bx1, top + 3 * sy);
+        ctx.moveTo(bx0, bot - 3 * sy);
+        ctx.lineTo(bx1, bot - 3 * sy);
+      }
+      ctx.stroke();
+      ctx.strokeStyle = landmark ? '#4a4a52' : '#e9c46a';
+      ctx.lineWidth = Math.max(1, 2 * sy);
+      ctx.setLineDash([6 * sy, 5 * sy]);
+      ctx.beginPath();
+      ctx.moveTo(bx0, y * sy);
+      ctx.lineTo(bx1, y * sy);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      if (landmark && detail) {
+        ctx.fillStyle = '#fff';
+        for (const t of [0.25, 0.5, 0.75]) {
+          const px = bx0 + (bx1 - bx0) * t;
+          const bulge = 2 * bow * sy * (1 - t) * t;
+          ctx.beginPath(); ctx.arc(px, top - bulge + 3 * sy, Math.max(1.5, 2.5 * sy), 0, Math.PI * 2); ctx.fill();
+          ctx.beginPath(); ctx.arc(px, bot + bulge - 3 * sy, Math.max(1.5, 2.5 * sy), 0, Math.PI * 2); ctx.fill();
+        }
+      }
+    }
+  }
+
   function buildMapBase(city) {
     const c = document.createElement('canvas');
     c.width = 188;
@@ -104,11 +182,16 @@ export function createHud() {
     ctx.fillStyle = PALETTE.grass;
     ctx.fillRect(0, 0, 188, 188);
     drawCoast(ctx, sx, sy, 188, 188);
+    drawRiver(ctx, sx, sy);
     ctx.fillStyle = PALETTE.asphalt;
     for (const x of city.xs) ctx.fillRect(x * sx - 2, 0, 4, 188);
     for (const y of city.ys) ctx.fillRect(0, y * sy - 2, 188, 4);
+    drawBridges(ctx, city, sx, sy, false);
     ctx.fillStyle = 'rgba(255,255,255,0.6)';
-    for (const b of city.buildings) ctx.fillRect(b.x * sx, b.y * sy, Math.max(1, b.w * sx), Math.max(1, b.h * sy));
+    for (const b of city.buildings) {
+      ctx.fillRect(b.x * sx, b.y * sy, Math.max(1, b.w * sx), Math.max(1, b.h * sy));
+      if (b.arm) ctx.fillRect(b.arm.x * sx, b.arm.y * sy, Math.max(1, b.arm.w * sx), Math.max(1, b.arm.h * sy));
+    }
     return c;
   }
 
@@ -124,6 +207,12 @@ export function createHud() {
       mapBase = buildMapBase(state.city);
       mapCity = state.city;
     }
+    // Round minimap, GTA-style: clip the whole paint to the inscribed
+    // circle of the 188x188 canvas (the CSS ring is round too).
+    mapCtx.save();
+    mapCtx.beginPath();
+    mapCtx.arc(94, 94, 94, 0, Math.PI * 2);
+    mapCtx.clip();
     mapCtx.drawImage(mapBase, 0, 0);
     const sx = 188 / WORLD.width;
     const sy = 188 / WORLD.height;
@@ -164,6 +253,14 @@ export function createHud() {
       mapCtx.strokeStyle = '#fff';
       mapCtx.lineWidth = 1;
       mapCtx.strokeRect(RACE.start.x * sx - 4, RACE.start.y * sy - 4, 8, 8);
+    }
+    // Crew-job starts: gold squares on the minimap, like the race start.
+    for (const p of crewJobStartPoints(state)) {
+      mapCtx.fillStyle = '#ffb703';
+      mapCtx.fillRect(p.x * sx - 4, p.y * sy - 4, 8, 8);
+      mapCtx.strokeStyle = '#fff';
+      mapCtx.lineWidth = 1;
+      mapCtx.strokeRect(p.x * sx - 4, p.y * sy - 4, 8, 8);
     }
     const marker = missionMarker(state);
     if (marker) {
@@ -262,6 +359,7 @@ export function createHud() {
     mapCtx.strokeStyle = '#fff';
     mapCtx.stroke();
     mapCtx.restore();
+    mapCtx.restore(); // un-clip the round minimap
   }
 
   return {
@@ -279,6 +377,7 @@ export function createHud() {
       ctx.fillStyle = PALETTE.grass;
       ctx.fillRect(0, 0, 560, 420);
       drawCoast(ctx, s, s, 560, 420);
+      drawRiver(ctx, s, s);
       for (const b of state.city.blocks) {
         ctx.fillStyle = b.park ? PALETTE.park : b.district === 'marina' ? PALETTE.water : PALETTE.sidewalk;
         ctx.fillRect(b.x * s, b.y * s, b.w * s, b.h * s);
@@ -296,8 +395,12 @@ export function createHud() {
       ctx.fillStyle = PALETTE.asphalt;
       for (const x of state.city.xs) ctx.fillRect(x * s - 2, 0, 4, 420);
       for (const y of state.city.ys) ctx.fillRect(0, y * s - 2, 560, 4);
+      drawBridges(ctx, state.city, s, s, true);
       ctx.fillStyle = 'rgba(255,255,255,0.75)';
-      for (const b of state.city.buildings) ctx.fillRect(b.x * s, b.y * s, Math.max(1, b.w * s), Math.max(1, b.h * s));
+      for (const b of state.city.buildings) {
+        ctx.fillRect(b.x * s, b.y * s, Math.max(1, b.w * s), Math.max(1, b.h * s));
+        if (b.arm) ctx.fillRect(b.arm.x * s, b.arm.y * s, Math.max(1, b.arm.w * s), Math.max(1, b.arm.h * s));
+      }
       ctx.fillStyle = 'rgba(255,255,255,0.92)';
       ctx.font = '800 13px "Avenir Next", "Segoe UI", system-ui, sans-serif';
       ctx.textAlign = 'center';
@@ -330,6 +433,10 @@ export function createHud() {
         roadName(name, 0, 0);
         ctx.restore();
       }
+      // The landmark bridge, named on the map so it reads as the feature
+      // it is — the gold deck the cover chase drives over.
+      ctx.textAlign = 'center';
+      roadName('CORAL BRIDGE', 1920 * s, 720 * s);
       const dot = (x, y, color, r) => {
         ctx.fillStyle = color;
         ctx.beginPath();
@@ -388,6 +495,14 @@ export function createHud() {
         const medal = state.progress.medals[i] ? ` ★ ${state.progress.medals[i].toUpperCase()}` : '';
         const replay = done ? ` <button type="button" data-replay="${i}">↻ Replay</button>` : '';
         html += `<div class="${cls}">${mark} ${i + 1}. ${job.title} — $${job.reward}${medal}${replay}</div>`;
+      });
+      html += `<hr><div><b>CREW JOBS</b>${state.progress.safehouse ? '' : ' — UNLOCK AFTER 3 STORY JOBS'}</div>`;
+      CREW_JOBS.forEach((job, i) => {
+        const done = state.crewJob.done.includes(i);
+        const active = state.crewJob.active && state.crewJob.index === i;
+        const mark = done ? '✓' : active ? '►' : '·';
+        const cls = done ? 'done' : active ? 'current' : '';
+        html += `<div class="${cls}">${mark} ${job.title} — $${job.reward} (${characterById(job.crew).name})</div>`;
       });
       nodes.mapList.innerHTML = html;
     },

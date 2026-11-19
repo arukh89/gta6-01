@@ -18,6 +18,15 @@ export const SAVE_KEY = 'solmaris-heat.save.v1';
 
 export const WALK = { speed: 175, sprint: 265, radius: 13 };
 export const DRIVE = { accel: 420, brake: 620, reverse: 160, maxSpeed: 520, turn: 2.6, grip: 3.2 };
+/** Traffic cruise: every traffic car cruises between these speeds and
+ * turns at an intersection with this chance, plain and identical for
+ * every car. Deliberately NOT varied per car: a per-car speed multiplier
+ * and turn chance (v9, reverted) shifted each car's trajectory and broke
+ * the regen test R1a, which scripts exact traffic positions. Traffic
+ * variety comes from body shapes, paints and police liveries — all
+ * chosen by position hash, never from the rng stream — so the
+ * trajectories, the tape/cash layout and the staged scenes never move. */
+export const TRAFFIC = { cruiseMin: 110, cruiseMax: 170, turnChance: 0.02 };
 export const HEALTH = { max: 100, regenDelay: 6, regenRate: 4, regenCap: 50, wastedPercent: 0.05, wastedCap: 5000 };
 /** Slow-mo (hold X): the world runs at this fraction of full speed while
  * Lena stays at full speed. The meter drains while it lasts and refills
@@ -36,6 +45,12 @@ export const VEHICLES = {
   taxi: { name: 'Bay Cab', length: 46, width: 22, top: 410, accel: 360, color: '#ffb703' },
   pickup: { name: 'Dune Pickup', length: 50, width: 23, top: 400, accel: 340, color: '#8ab17d' },
   sports: { name: 'Vela GT', length: 48, width: 22, top: 560, accel: 520, color: '#e63946' },
+  /** New body shapes, same-class stats as an existing model — a coupe
+   * is a sports car, a hatch is a sedan, a truck is a pickup — so top
+   * speed, acceleration and sell price never change, only the shape. */
+  coupe: { name: 'Vela Coupe', length: 46, width: 22, top: 560, accel: 520, color: '#f4d35e' },
+  hatch: { name: 'Palma Hatch', length: 42, width: 22, top: 430, accel: 380, color: '#8ecae6' },
+  truck: { name: 'Harbor Truck', length: 56, width: 24, top: 400, accel: 340, color: '#6d6875' },
   van: { name: 'Harbor Van', length: 54, width: 24, top: 360, accel: 300, color: '#a8dadc' },
   police: { name: 'Solmaris PD Cruiser', length: 48, width: 22, top: 500, accel: 470, color: '#1d3557' },
   /** A drivable boat: water-only, reuses the car system (kind 'boat'). */
@@ -61,9 +76,9 @@ export const SKILL_PER = { driving: 50, shooting: 8, stamina: 40 };
  * others wait at the safehouse — press T there to switch. All names,
  * looks and backstories are original. */
 export const CHARACTERS = [
-  { id: 'lena', name: 'Lena Cruz', role: 'The Wheelwoman', perk: 'driving', perkText: '+Driving — top speed grows sooner', shirt: '#fb8500', skin: '#c68642', blurb: 'Owes Dario one last favour. Knows every shortcut in Solmaris.' },
-  { id: 'ivy', name: 'Ivy Solano', role: 'The Sharpshooter', perk: 'shooting', perkText: '+Shooting — harder hits from the start', shirt: '#2a9d8f', skin: '#e8b88a', blurb: 'Ex-range regular. Never misses twice, never talks about the first time.' },
-  { id: 'marco', name: 'Marco Vane', role: 'The Muscle', perk: 'stamina', perkText: '+Stamina — sprints longer, recovers faster', shirt: '#9b5de5', skin: '#8d5524', blurb: 'Carries the heavy crates and the heavier grudges. The crew’s backbone.' },
+  { id: 'lena', name: 'Lena Cruz', role: 'The Wheelwoman', perk: 'driving', perkText: '+Driving — top speed grows sooner', shirt: '#fb8500', skin: '#c68642', pants: '#1d3557', hat: 'cap', scale: 1.0, build: 1.0, blurb: 'Owes Dario one last favour. Knows every shortcut in Solmaris.' },
+  { id: 'ivy', name: 'Ivy Solano', role: 'The Sharpshooter', perk: 'shooting', perkText: '+Shooting — harder hits from the start', shirt: '#2a9d8f', skin: '#e8b88a', pants: '#14532d', hat: 'beanie', scale: 0.94, build: 0.9, blurb: 'Ex-range regular. Never misses twice, never talks about the first time.' },
+  { id: 'marco', name: 'Marco Vane', role: 'The Muscle', perk: 'stamina', perkText: '+Stamina — sprints longer, recovers faster', shirt: '#9b5de5', skin: '#8d5524', pants: '#212529', hat: 'wide', scale: 1.12, build: 1.2, blurb: 'Carries the heavy crates and the heavier grudges. The crew’s backbone.' },
 ];
 
 /** Look a character up by id; unknown ids fall back to Lena. */

@@ -1,24 +1,51 @@
 // Solmaris traffic: cars that follow the road grid, turn at intersections,
 // queue behind the car ahead, and parked cars waiting to be borrowed. Traffic
 // never leaves the roads, so the streets always read as streets from above.
-import { VEHICLES, WORLD } from './config.js';
+import { TRAFFIC, VEHICLES, WORLD } from './config.js';
 import { clampBoatToWater, createCar } from './player.js';
 import { isOnRoad, randomRoadPoint, resolveBuildingCollision } from './world.js';
 
+/** Body shapes on the road: the pick list stays the ORIGINAL six, so
+ * the rng draw — and the taxi/non-taxi pattern that decides whether a
+ * paint draw follows — is byte-identical to v8, and every traffic and
+ * parked position stays exactly where it was. The new shapes (coupe,
+ * hatch, truck) are mapped from the picked type by a position hash, so
+ * ZERO rng is consumed: a sports pick becomes a coupe half the time, a
+ * sedan becomes a hatch 40% of the time, a pickup becomes a truck 40%
+ * of the time. The traffic reads as a fleet instead of clones, and the
+ * stream never moves. */
 const TRAFFIC_TYPES = ['sedan', 'taxi', 'pickup', 'van', 'sedan', 'sports'];
-const PAINTS = ['#e76f51', '#2a9d8f', '#e9c46a', '#6c757d', '#f4a261', '#8ecae6', '#b5838d', '#dee2e6'];
+const PAINTS = ['#e76f51', '#2a9d8f', '#e9c46a', '#6c757d', '#f4a261', '#8ecae6', '#b5838d', '#dee2e6', '#f4d35e', '#90be6d', '#ff8fa3', '#4a4e69'];
+
+/** Deterministic 0..1 hash — a per-car habit from an index alone, so no
+ * seeded-rng call is consumed and the stream stays exactly where it was. */
+function hash01(n) {
+  const x = Math.sin(n * 127.1) * 43758.5453;
+  return x - Math.floor(x);
+}
+
+/** Map a picked body to its variant: sports → coupe, sedan → hatch,
+ * pickup → truck, the rest unchanged. Pure hash, no rng. */
+function varyBody(type, i) {
+  if (type === 'sports' && hash01(i * 3.3 + 2.1) < 0.5) return 'coupe';
+  if (type === 'sedan' && hash01(i * 2.9 + 1.3) < 0.4) return 'hatch';
+  if (type === 'pickup' && hash01(i * 4.1 + 0.7) < 0.4) return 'truck';
+  return type;
+}
 
 export function createTraffic(city, rng, count) {
   const cars = [];
   for (let i = 0; i < count; i += 1) {
     const point = randomRoadPoint(city, rng);
     const vertical = city.xs.some((x) => Math.abs(point.x - x) < 4);
-    const type = rng.pick(TRAFFIC_TYPES);
+    const type = varyBody(rng.pick(TRAFFIC_TYPES), i);
     const car = createCar(type, point.x, point.y, vertical ? Math.PI / 2 : 0, 'traffic');
     car.color = type === 'taxi' ? VEHICLES.taxi.color : rng.pick(PAINTS);
     car.axis = vertical ? 'y' : 'x';
     car.dir = rng.chance(0.5) ? 1 : -1;
-    car.speed = rng.range(110, 170);
+    // Cruise speed: the plain TRAFFIC range — never varied per car (see
+    // config.js: a per-car multiplier shifted trajectories and broke R1a).
+    car.speed = rng.range(TRAFFIC.cruiseMin, TRAFFIC.cruiseMax);
     car.cruise = car.speed;
     cars.push(car);
   }
@@ -37,7 +64,7 @@ export function createParkedCars(city, rng, count) {
     const x = vertical ? point.x + offset : point.x;
     const y = vertical ? point.y : point.y + offset;
     if (!isOnRoad(city, x, y)) continue;
-    const type = rng.pick(TRAFFIC_TYPES);
+    const type = varyBody(rng.pick(TRAFFIC_TYPES), placed);
     const car = createCar(type, x, y, vertical ? Math.PI / 2 : 0, 'none');
     car.color = type === 'taxi' ? VEHICLES.taxi.color : rng.pick(PAINTS);
     cars.push(car);
@@ -88,7 +115,7 @@ export function updateTraffic(state, dt) {
     // Wrecked traffic rolls to a stop on its road and never turns again.
     const target = car.health <= 0 ? 0 : (carAhead(state, car) ? 0 : car.cruise);
     car.speed += (target - car.speed) * Math.min(1, 3 * dt);
-    if (car.health > 0 && atIntersection(state.city, car) && state.rng.chance(0.02)) {
+    if (car.health > 0 && atIntersection(state.city, car) && state.rng.chance(TRAFFIC.turnChance)) {
       car.axis = car.axis === 'x' ? 'y' : 'x';
       car.dir = state.rng.chance(0.5) ? 1 : -1;
       if (car.axis === 'x') {

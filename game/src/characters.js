@@ -78,6 +78,10 @@ export function loadRecordToLive(state, id) {
   p.stamina = rec.stamina ?? 100;
   p.shirt = def.shirt;
   p.skin = def.skin;
+  p.pants = def.pants ?? '#1d3557';
+  p.hat = def.hat ?? 'cap';
+  p.scale = def.scale ?? 1;
+  p.build = def.build ?? 1;
   p.onFoot = true;
   p.carId = null;
   p.cover = null;
