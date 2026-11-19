@@ -12,7 +12,7 @@
 import * as THREE from 'three';
 import { PALETTE, VEHICLES, WORLD } from './config.js';
 import { buildGround } from './render.js';
-import { missionMarker } from './missions.js';
+import { RACE, missionMarker } from './missions.js';
 import { playerCar } from './player.js';
 
 /** How much taller a building reads in 3D than its 2D extrusion height. */
@@ -25,7 +25,7 @@ const CENTER_Y = WORLD.height / 2;
 const LIGHTING = {
   day: { sky: 0x9fc8e8, sun: 0xfff2d0, sunI: 2.2, hemiSky: 0xbfdcff, hemiGround: 0x8a7a5a, hemiI: 0.9, fogNear: 1000, fogFar: 2600, exposure: 1.05 },
   golden: { sky: 0xf4a261, sun: 0xff8c42, sunI: 1.8, hemiSky: 0xe8a0bf, hemiGround: 0x7a5a3a, hemiI: 0.8, fogNear: 900, fogFar: 2200, exposure: 1.0 },
-  night: { sky: 0x232a4a, sun: 0x8fa8d0, sunI: 0.5, hemiSky: 0x4a5a8a, hemiGround: 0x2a2a3a, hemiI: 0.5, fogNear: 700, fogFar: 1800, exposure: 0.95 },
+  night: { sky: 0x232a4a, sun: 0x8fa8d0, sunI: 0.6, hemiSky: 0x4a5a8a, hemiGround: 0x2a2a3a, hemiI: 0.65, fogNear: 700, fogFar: 1800, exposure: 0.95 },
 };
 
 function shadeHex(hex, amount) {
@@ -46,6 +46,16 @@ function lerpAngle(a, b, t) {
   if (d > Math.PI) d -= Math.PI * 2;
   if (d < -Math.PI) d += Math.PI * 2;
   return a + d * t;
+}
+
+/** Searchlight strength: none in bright day, ramping up through golden
+ * hour, full at night; dusk shots get a strong beam too. */
+function nightFactor(minutes, dusk) {
+  if (dusk) return 0.85;
+  if (minutes < 5 * 60) return 1;
+  if (minutes < 17 * 60) return 0;
+  if (minutes < 19 * 60) return (minutes - 17 * 60) / 120;
+  return 1;
 }
 
 /** Blend between the day, golden-hour and night lighting presets. */
@@ -176,6 +186,7 @@ export function createRenderer3d(canvas) {
   let buildingGeometries = [];
   const signMeshes = [];
   const cashMeshes = new Map();
+  const tapeMeshes = new Map();
 
   function box(w, h, d, mat, x, y, z, parent) {
     const mesh = new THREE.Mesh(unitBox, mat);
@@ -193,6 +204,7 @@ export function createRenderer3d(canvas) {
     buildingGeometries = [];
     signMeshes.length = 0;
     cashMeshes.clear();
+    tapeMeshes.clear();
     if (groundTexture) groundTexture.dispose();
 
     const groundCanvas = buildGround(city);
@@ -287,6 +299,14 @@ export function createRenderer3d(canvas) {
       mesh.castShadow = false;
       cashMeshes.set(drop, mesh);
     }
+    for (const tape of city.tapes) {
+      const mesh = box(12, 4, 12, basic('#ffd60a'), tape.x - CENTER_X, 6, tape.y - CENTER_Y, cityGroup);
+      mesh.castShadow = false;
+      tapeMeshes.set(tape, mesh);
+    }
+    // Cielo Arms sign: a green-lit board on a pole at the gun shop.
+    box(2, 40, 2, lambert('#3a3a3a'), city.gunShop.x - CENTER_X, 20, city.gunShop.y - CENTER_Y, cityGroup);
+    box(26, 9, 2, basic('#2a9d8f'), city.gunShop.x - CENTER_X, 42, city.gunShop.y - CENTER_Y, cityGroup);
     cityBuilt = city;
   }
 
@@ -294,6 +314,7 @@ export function createRenderer3d(canvas) {
   const carMeshes = new Map();
   const pedMeshes = new Map();
   let playerMesh = null;
+  let playerMeshShirt = null;
   let playerRing = null;
   let aimLine = null;
   let carRing = null;
@@ -312,16 +333,88 @@ export function createRenderer3d(canvas) {
   sideDot.position.y = 40;
   markerGroup.add(markerDiamond, markerBeam, sideDot);
   dynamicGroup.add(markerGroup);
+  // Street-race start marker: a purple octahedron over the start line while
+  // no race is running.
+  const raceMarker = new THREE.Mesh(markerGeo, basic('#9b5de5'));
+  raceMarker.position.y = 50;
+  dynamicGroup.add(raceMarker);
+
+  // Darts: a board on the Neon Club, always there. Range targets at
+  // Cielo Arms: five posts with red discs, up only while a range game runs.
+  const dartBoard = new THREE.Mesh(new THREE.CylinderGeometry(22, 22, 3, 24), basic('#f8f9fa'));
+  dartBoard.rotation.x = Math.PI / 2;
+  const dartBull = new THREE.Mesh(new THREE.CylinderGeometry(8, 8, 4, 16), basic('#e63946'));
+  dartBull.rotation.x = Math.PI / 2;
+  dynamicGroup.add(dartBoard, dartBull);
+  const rangeTargets = [];
+  for (let i = 0; i < 5; i += 1) {
+    const group = new THREE.Group();
+    box(4, 30, 4, lambert('#3a3a3a'), 0, 15, 0, group);
+    const disc = new THREE.Mesh(new THREE.SphereGeometry(12, 12, 10), basic('#e63946'));
+    disc.position.y = 36;
+    group.add(disc);
+    group.visible = false;
+    dynamicGroup.add(group);
+    rangeTargets.push({ group, disc });
+  }
+
+  // Police helicopter, built lazily the first time one spawns: body, tail,
+  // skids and a spinning rotor, plus a searchlight cone, a light pool on
+  // the ground, and a real spotlight for the night.
+  let heliGroup = null;
+  let heliRotor = null;
+  let heliCone = null;
+  let heliDisc = null;
+  let heliSpot = null;
+  let heliSpotTarget = null;
+  const heliUp = new THREE.Vector3(0, 1, 0);
+  const heliDir = new THREE.Vector3();
+  const heliNeg = new THREE.Vector3();
+  const heliMid = new THREE.Vector3();
+  const heliPos = new THREE.Vector3();
+  const groundPos = new THREE.Vector3();
+
+  function buildHeli() {
+    heliGroup = new THREE.Group();
+    box(46, 12, 20, lambert('#1d3557'), 0, 0, 0, heliGroup);
+    box(46, 3, 21, basic('#f8f9fa'), 0, 2, 0, heliGroup);
+    box(38, 5, 5, lambert('#1d3557'), -40, 2, 0, heliGroup);
+    box(2, 12, 8, lambert('#1d3557'), -58, 6, 0, heliGroup);
+    box(30, 2, 3, tyreMat, 0, -9, -9, heliGroup);
+    box(30, 2, 3, tyreMat, 0, -9, 9, heliGroup);
+    heliRotor = new THREE.Group();
+    box(76, 1.5, 5, tyreMat, 0, 0, 0, heliRotor);
+    box(5, 1.5, 76, tyreMat, 0, 0, 0, heliRotor);
+    heliRotor.position.y = 9;
+    heliGroup.add(heliRotor);
+    dynamicGroup.add(heliGroup);
+    const coneGeo = new THREE.ConeGeometry(80, 1, 20, 1, true);
+    heliCone = new THREE.Mesh(coneGeo, new THREE.MeshBasicMaterial({ color: 0xfff2c0, transparent: true, opacity: 0, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending }));
+    dynamicGroup.add(heliCone);
+    heliDisc = new THREE.Mesh(new THREE.CircleGeometry(70, 24), new THREE.MeshBasicMaterial({ color: 0xfff2c0, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
+    heliDisc.rotation.x = -Math.PI / 2;
+    dynamicGroup.add(heliDisc);
+    heliSpot = new THREE.SpotLight(0xfff2c0, 0, 1100, 0.45, 0.6, 1);
+    heliSpotTarget = new THREE.Object3D();
+    scene.add(heliSpotTarget);
+    heliSpot.target = heliSpotTarget;
+    scene.add(heliSpot);
+  }
 
   function buildCarMesh(car) {
     const spec = VEHICLES[car.kind];
     const group = new THREE.Group();
     const body = box(spec.length, 10, spec.width, lambert(car.color), 0, 7, 0, group);
     void body;
-    box(spec.length * 0.45, 9, spec.width * 0.78, glassMat, -spec.length * 0.05, 15, 0, group);
-    for (const sx of [-1, 1]) {
-      for (const sz of [-1, 1]) {
-        box(9, 9, 4, tyreMat, sx * spec.length * 0.32, 4.5, sz * (spec.width / 2), group);
+    // A boat floats: no tyres and no glass roofline — a red cabin instead.
+    if (car.kind === 'boat') {
+      box(spec.length * 0.28, 8, spec.width * 0.6, lambert('#e63946'), -spec.length * 0.05, 16, 0, group);
+    } else {
+      box(spec.length * 0.45, 9, spec.width * 0.78, glassMat, -spec.length * 0.05, 15, 0, group);
+      for (const sx of [-1, 1]) {
+        for (const sz of [-1, 1]) {
+          box(9, 9, 4, tyreMat, sx * spec.length * 0.32, 4.5, sz * (spec.width / 2), group);
+        }
       }
     }
     box(2, 3, 4, basic('#fff8d6'), spec.length / 2, 7, -spec.width / 2 + 5, group);
@@ -400,6 +493,25 @@ export function createRenderer3d(canvas) {
     const cam = state.camera;
     const tx = cam.x - CENTER_X;
     const tz = cam.y - CENTER_Y;
+    // First-person camera: at Lena's eye, looking where she looks —
+    // or over the hood when driving. The player mesh hides itself.
+    if (state.firstPerson) {
+      const px = state.player.x - CENTER_X;
+      const pz = state.player.y - CENTER_Y;
+      const a = state.player.angle;
+      const fpCar = playerCar(state);
+      const eye = fpCar ? 24 : 26 + (state.player.z || 0);
+      camera.position.set(px + Math.cos(a) * 4, eye, pz + Math.sin(a) * 4);
+      camera.lookAt(px + Math.cos(a) * 120, eye - 3, pz + Math.sin(a) * 120);
+      if (Math.abs(camera.fov - 62) > 0.5) {
+        camera.fov = 62;
+        camera.updateProjectionMatrix();
+      }
+      sun.position.set(tx + 420, 620, tz + 320);
+      sun.target.position.set(tx, 0, tz);
+      cameraPlaced = true;
+      return;
+    }
     const car = playerCar(state);
     if (car) {
       walkHeading = walkHeading === null ? car.angle : lerpAngle(walkHeading, car.angle, 0.1);
@@ -489,6 +601,14 @@ export function createRenderer3d(canvas) {
       }
     }
 
+    for (const [tape, mesh] of tapeMeshes) {
+      mesh.visible = !tape.taken;
+      if (mesh.visible) {
+        mesh.position.y = 6 + Math.sin(state.time * 3.4 + tape.x) * 2;
+        mesh.rotation.y = state.time * 1.3 + tape.x;
+      }
+    }
+
     const heroCar = playerCar(state);
     const seenCars = new Set();
     for (const car of state.cars) {
@@ -526,7 +646,9 @@ export function createRenderer3d(canvas) {
       seenPeds.add(ped);
       const bob = Math.sin(ped.phase || 0) * 1.5;
       if (ped.down > 0) {
-        group.position.set(ped.x - CENTER_X, 5, ped.y - CENTER_Y);
+        // A dead body sinks into the ground over its last two seconds.
+        const sink = ped.dead ? Math.min(2, Math.max(0, 2 - ped.down)) * 2.5 : 0;
+        group.position.set(ped.x - CENTER_X, 5 - sink, ped.y - CENTER_Y);
         group.rotation.set(1.4, -ped.angle, 0);
       } else {
         group.position.set(ped.x - CENTER_X, bob * 0.3, ped.y - CENTER_Y);
@@ -540,9 +662,16 @@ export function createRenderer3d(canvas) {
       }
     }
 
-    if (!playerMesh) {
-      playerMesh = buildPersonMesh('#fb8500', '#c68642', 'player');
+    // The player mesh is rebuilt when the shirt changes (a character
+    // switch): the ring, aim line and car ring are built once only.
+    const shirt = state.player.shirt || '#fb8500';
+    if (!playerMesh || playerMeshShirt !== shirt) {
+      if (playerMesh) dynamicGroup.remove(playerMesh);
+      playerMesh = buildPersonMesh(shirt, state.player.skin || '#c68642', 'player');
+      playerMeshShirt = shirt;
       dynamicGroup.add(playerMesh);
+    }
+    if (!playerRing) {
       playerRing = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85 }));
       playerRing.rotation.x = -Math.PI / 2;
       dynamicGroup.add(playerRing);
@@ -555,13 +684,15 @@ export function createRenderer3d(canvas) {
     }
     const player = state.player;
     if (player.onFoot) {
-      playerMesh.visible = true;
-      playerRing.visible = true;
-      aimLine.visible = true;
+      // First-person hides Lena herself; cover crouches her; a jump lifts her.
+      playerMesh.visible = !state.firstPerson;
+      playerRing.visible = !state.firstPerson;
+      aimLine.visible = !state.firstPerson;
       carRing.visible = false;
       const bob = Math.sin(player.walkPhase || 0) * 1.5;
-      playerMesh.position.set(player.x - CENTER_X, bob * 0.3, player.y - CENTER_Y);
+      playerMesh.position.set(player.x - CENTER_X, (player.z || 0) + bob * 0.3, player.y - CENTER_Y);
       playerMesh.rotation.y = -player.angle;
+      playerMesh.scale.set(1, player.cover ? 0.62 : 1, 1);
       playerRing.position.set(player.x - CENTER_X, 1, player.y - CENTER_Y);
       aimLine.position.set(player.x + Math.cos(player.angle) * 14 - CENTER_X, 2, player.y + Math.sin(player.angle) * 14 - CENTER_Y);
       aimLine.rotation.y = -player.angle;
@@ -569,7 +700,7 @@ export function createRenderer3d(canvas) {
       playerMesh.visible = false;
       playerRing.visible = false;
       aimLine.visible = false;
-      carRing.visible = !!heroCar;
+      carRing.visible = !!heroCar && !state.firstPerson;
       if (heroCar) carRing.position.set(heroCar.x - CENTER_X, 1, heroCar.y - CENTER_Y);
     }
 
@@ -583,6 +714,63 @@ export function createRenderer3d(canvas) {
       if (sideDot.visible) {
         sideDot.position.set(state.sideJob.target.x - marker.x, 40, state.sideJob.target.y - marker.y);
       }
+    }
+
+    raceMarker.visible = !!(state.race && !state.race.active);
+    if (raceMarker.visible) {
+      raceMarker.position.set(RACE.start.x - CENTER_X, 50 + Math.sin(state.time * 3) * 4, RACE.start.y - CENTER_Y);
+      raceMarker.rotation.y = state.time * 1.5;
+    }
+
+    // Darts board on the Neon Club, and the range targets while a game runs.
+    dartBoard.position.set(state.city.property.x - CENTER_X, 24, state.city.property.y - CENTER_Y);
+    dartBull.position.set(state.city.property.x - CENTER_X, 24, state.city.property.y + 2 - CENTER_Y);
+    const mg = state.minigame;
+    const rangeOn = !!(mg && mg.active && mg.kind === 'range');
+    rangeTargets.forEach((t, i) => {
+      const target = rangeOn ? mg.targets[i] : null;
+      t.group.visible = !!target;
+      if (!target) return;
+      t.group.position.set(target.x - CENTER_X, 0, target.y - CENTER_Y);
+      t.disc.position.y = target.down ? 8 : 36;
+    });
+
+    if (state.heli) {
+      if (!heliGroup) buildHeli();
+      heliGroup.visible = true;
+      heliPos.set(state.heli.x - CENTER_X, state.heli.z, state.heli.y - CENTER_Y);
+      heliGroup.position.copy(heliPos);
+      heliGroup.rotation.y = -state.heli.angle;
+      // A shot-down helicopter rolls as it falls.
+      heliGroup.rotation.z = state.heli.mode === 'crashing' ? 0.5 : 0;
+      heliRotor.rotation.y = state.heli.rotor;
+      const f = nightFactor(state.clockMinutes || 0, state.dusk);
+      groundPos.set(state.player.x - CENTER_X, 0, state.player.y - CENTER_Y);
+      heliDir.copy(groundPos).sub(heliPos);
+      const beamLen = heliDir.length();
+      heliDir.normalize();
+      heliCone.visible = f > 0.05;
+      if (heliCone.visible) {
+        heliMid.copy(heliPos).addScaledVector(heliDir, beamLen / 2);
+        heliCone.position.copy(heliMid);
+        heliNeg.copy(heliDir).negate();
+        heliCone.quaternion.setFromUnitVectors(heliUp, heliNeg);
+        heliCone.scale.set(1, beamLen, 1);
+        heliCone.material.opacity = 0.22 * f;
+      }
+      heliDisc.visible = f > 0.05;
+      if (heliDisc.visible) {
+        heliDisc.position.set(groundPos.x, 1, groundPos.z);
+        heliDisc.material.opacity = 0.28 * f;
+      }
+      heliSpot.intensity = 900 * f;
+      heliSpot.position.copy(heliPos);
+      heliSpotTarget.position.copy(groundPos);
+    } else if (heliGroup) {
+      heliGroup.visible = false;
+      heliCone.visible = false;
+      heliDisc.visible = false;
+      heliSpot.intensity = 0;
     }
 
     for (let i = 0; i < state.bullets.length; i += 1) {

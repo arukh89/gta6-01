@@ -33,6 +33,27 @@ export function spawnSmoke(state, x, y) {
   });
 }
 
+/** A lick of flame from a badly damaged engine: orange, rising fast. */
+export function spawnFlame(state, x, y) {
+  state.particles.push({
+    x: x + state.rng.range(-8, 8),
+    y: y + state.rng.range(-6, 6),
+    vx: state.rng.range(-10, 10),
+    vy: -state.rng.range(50, 90),
+    life: state.rng.range(0.25, 0.5),
+    maxLife: 0.5,
+    size: state.rng.range(5, 9),
+    color: state.rng.chance(0.5) ? '#ff7b00' : '#ffd60a',
+  });
+}
+
+/** A car exploding: one big burst of fire, smoke and sparks. */
+export function spawnExplosion(state, x, y) {
+  for (let i = 0; i < 10; i += 1) spawnFlame(state, x, y);
+  for (let i = 0; i < 8; i += 1) spawnSmoke(state, x, y);
+  spawnSparks(state, x, y);
+}
+
 export function spawnDust(state, x, y) {
   state.particles.push({
     x, y,
@@ -88,8 +109,13 @@ export function updateEffects(state, dt) {
   }
   state.shake = Math.max(0, state.shake - 30 * dt);
   for (const car of state.cars) {
-    if (car.health < 45 && car.health > 0 && state.rng.chance(0.12)) {
+    // Damaged cars smoke a little; wrecked cars pour it out continuously.
+    if (car.health < 45 && state.rng.chance(car.health <= 0 ? 0.5 : 0.12)) {
       spawnSmoke(state, car.x, car.y - 8);
+    }
+    // Badly damaged engines catch fire: smoke, then flame, then boom.
+    if (car.health < 25 && state.rng.chance(0.25)) {
+      spawnFlame(state, car.x, car.y - 8);
     }
   }
 }

@@ -12,20 +12,53 @@
 <div id="hud" class="hidden" aria-hidden="true">
   <div id="hud-left">
     <div id="wanted" title="Wanted level"></div>
+    <div id="heatstatus"></div>
     <div id="healthbar"><div id="healthfill"></div><span id="healthtext"></span></div>
+    <div id="armourbar"><div id="armourfill"></div><span id="armourtext"></span></div>
     <div id="money">$0</div>
     <div id="respect"></div>
+    <div id="radio">♪ SOL BAY FM 92.4</div>
+    <div id="tapes">TAPES 0/12</div>
   </div>
   <div id="objective"><span id="objective-label">MISSION</span><span id="objective-text"></span></div>
+  <div id="district" class="hidden"></div>
   <div id="hud-right">
     <canvas id="minimap" width="188" height="188"></canvas>
     <div id="clock">16:40</div>
   </div>
-  <div id="driveinfo" class="hidden"><span id="speed">0</span><span class="unit">km/h</span><span id="carname"></span></div>
-  <div id="weaponinfo"><span id="weaponname">Fists</span><span id="ammo"></span></div>
+  <div id="driveinfo" class="hidden"><span id="speed">0</span><span class="unit">km/h</span><span id="carname"></span><div id="nosbar"><div id="nosfill"></div><span id="noslabel">NOS</span></div></div>
+  <div id="weaponinfo"><span id="weaponname">Fists</span><span id="ammo"></span><span id="snacks"></span><div id="slowmobar"><div id="slowmofill"></div><span id="slowmolabel">SLOW-MO · X</span></div><div id="swimbar" class="hidden"><div id="swimfill"></div><span id="swimlabel">SWIMMING · STAMINA</span></div></div>
   <div id="prompt" class="hidden"></div>
   <div id="toast" class="hidden"></div>
-  <div id="hint">WASD move / drive · E enter car · Click shoot · 1/2 weapons · Shift sprint · P pause · M sound</div>
+  <div id="hint">WASD move / drive · E enter car · Click shoot · 1/2/3 weapons · Q radio · F shop · Space NOS / jump · Shift sprint · C cover · V camera · X slow-mo · G snack · T switch character (safehouse) · P pause · M sound</div>
+</div>
+
+<div id="map" class="overlay hidden">
+  <div class="panel map-panel">
+    <p class="kicker">SOLMARIS — CITY MAP</p>
+    <h2>City map</h2>
+    <div class="map-wrap">
+      <canvas id="mapcanvas" width="560" height="420"></canvas>
+      <div id="maplist"></div>
+    </div>
+    <div class="buttons"><button id="btn-map-close" type="button">Close (B)</button></div>
+  </div>
+</div>
+
+<div id="shop" class="overlay hidden">
+  <div class="panel">
+    <p class="kicker">CIELO ARMS — WEAPONS &amp; ARMOUR</p>
+    <h2>Gun shop</h2>
+    <p id="shop-money"></p>
+    <div class="buttons shop-items">
+      <button id="buy-smg" type="button">SMG — $600</button>
+      <button id="buy-smg-ammo" type="button">SMG ammo +60 — $80</button>
+      <button id="buy-pistol-ammo" type="button">Pistol ammo +48 — $40</button>
+      <button id="buy-armour" type="button">Armour — $150</button>
+      <button id="buy-snack" type="button">Snack (+30 HP) — $15</button>
+    </div>
+    <div class="buttons"><button id="btn-shop-close" type="button">Close (F)</button></div>
+  </div>
 </div>
 
 <div id="title" class="overlay">
@@ -38,17 +71,32 @@
       <button id="btn-continue" type="button" class="hidden">Continue</button>
       <button id="btn-help" type="button">How to play</button>
     </div>
-    <p class="controls">WASD / arrows — walk and drive · Mouse — aim · Click — shoot / punch · E — steal or enter a car · Shift — sprint / handbrake · 1 fists, 2 pistol · P pause · M sound · Progress saves automatically.</p>
+    <p class="controls">WASD / arrows — walk and drive · Mouse — aim · Click — shoot / punch · E — steal or enter a car · Q — radio · F — shop / repaint · Space — NOS boost (driving) / jump (on foot) · Shift — sprint / handbrake · C — cover · V — first-person camera · X — slow-mo (hold) · G — eat a snack · T — switch character at the safehouse · 1 fists, 2 pistol, 3 SMG · P pause · M sound · Progress saves automatically.</p>
     <p class="fine">Every name, character, street and sound in this game is original. No assets from any commercial game.</p>
+  </div>
+</div>
+
+<div id="select" class="overlay hidden">
+  <div class="panel">
+    <p class="kicker">CHOOSE YOUR CREW</p>
+    <h2>Who runs Solmaris tonight?</h2>
+    <p class="story">Three crew, one city. Money, jobs, Respect and progress are shared — each keeps their own skills, weapons, health and spot in the city. The others wait at the safehouse: press T there to switch.</p>
+    <div id="char-cards"></div>
+    <div class="buttons">
+      <button id="btn-char-prev" type="button">←</button>
+      <button id="btn-char-start" type="button">Start as Lena Cruz</button>
+      <button id="btn-char-next" type="button">→</button>
+    </div>
+    <div class="buttons"><button id="btn-char-back" type="button">Back</button></div>
   </div>
 </div>
 
 <div id="help" class="overlay hidden">
   <div class="panel">
     <h2>How to play</h2>
-    <p>Follow the gold marker on the minimap to work through six story jobs for Dario, from a first errand to the Heatwave finale. Between jobs, take taxi fares at the blue markers, grab cash drops, and explore Solmaris on foot or in any car you can reach.</p>
-    <p>Crime raises your wanted stars. Police cars chase you and officers come on foot. Break line of sight and stay hidden to cool down, or pay $150 at the Spray Barn to wipe the slate clean. Getting busted costs you $200 and your heat; running out of health sends you to the clinic and costs $150.</p>
-    <p class="controls">WASD walk / drive · E enter or leave a car · Click attack · 1 / 2 switch weapon · R reload · Shift sprint / handbrake · P pause · M mute · Your game saves when a job ends and from the pause menu.</p>
+    <p>Follow the gold marker on the minimap to work through nine story jobs for Dario, from a first errand to the Heatwave finale. Between jobs, take taxi fares at the blue markers, race from the purple marker, grab cash drops and Tide Tapes, and explore Solmaris on foot or in any car you can reach. The gun shop sells an SMG and armour; the garage repairs and repaints your car once Dario trusts you with it. Three characters share the crew — Lena Cruz, Ivy Solano and Marco Vane: pick one when you start a new game, and press T at the safehouse to switch. Money, jobs, Respect and progress are shared; each keeps their own skills, weapons, health and spot in the city.</p>
+    <p>Crime raises your wanted stars — but only when someone sees it. Shoot or steal with no witness around and the police never hear about it; a car alarm can give you away. Once the stars are up, break line of sight and stay hidden: the stars blink while the police search, and each star cools off after 30–90 seconds depending on the level. A new car while hidden cools one star. The Spray Barn only works when the police have lost sight of you and you drive in ($150). Getting busted costs all your ammo and armour; running out of health sends you to the clinic, which takes 5% of your cash. Health only regrows to 50 on its own — snacks, the clinic, and the safehouse take you past that. Police cars chase you, officers come on foot, a helicopter joins at three stars (you can shoot it down), and at four stars SWAT and roadblocks join in. At five stars, one more witnessed crime brings HEAT: a sixth red star, more cruisers, faster SWAT and roadblocks, and stars that cool half as fast. Hold X for slow-mo — the world crawls while you stay fast, until the meter runs dry. You can swim: walk into the bay at 60% speed, watch your stamina, and get out before it runs dry. The two skiffs at the marina and the lighthouse are free to board with E — they only sail on water, and the police cannot follow you out there.</p>
+    <p class="controls">WASD walk / drive · E enter or leave a car · Click attack (also from the driver's seat) · 1 / 2 / 3 switch weapon · Q radio station · F shop / repaint / buy the Neon Club · Space NOS boost (driving) / jump (on foot) · R reload · Shift sprint / handbrake · C cover · V first-person camera · X slow-mo (hold) · G eat a snack · H sleep 8h at the safehouse · T switch character at the safehouse · J sell a borrowed car at the garage (once a day) · B city map — finished jobs can be replayed there for medals · P pause · M mute · Your game saves when a job ends and from the pause menu.</p>
     <div class="buttons"><button id="btn-help-back" type="button">Back</button></div>
   </div>
 </div>
@@ -59,6 +107,7 @@
     <p id="pause-stats"></p>
     <div class="buttons">
       <button id="btn-resume" type="button">Resume</button>
+      <button id="btn-map" type="button">City map</button>
       <button id="btn-save" type="button">Save game</button>
       <button id="btn-quit" type="button">Save &amp; title screen</button>
     </div>
@@ -78,7 +127,11 @@
     <p class="kicker" id="brief-kicker">JOB 1 OF 6</p>
     <h2 id="brief-title"></h2>
     <p id="brief-text"></p>
-    <div class="buttons"><button id="btn-brief" type="button">Let's go</button></div>
+    <div class="buttons">
+      <button id="btn-brief" type="button">Let's go</button>
+      <button id="btn-brief-alt" type="button" class="hidden"></button>
+      <button id="btn-brief-skip" type="button" class="hidden">Skip this job (no pay)</button>
+    </div>
   </div>
 </div>
 

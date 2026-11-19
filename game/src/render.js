@@ -4,7 +4,7 @@
 // so a car passing a tall tower reads as passing behind its face. Warm light,
 // long shadows and a dusk tint carry the sun-soaked look.
 import { FONT, PALETTE, VEHICLES, WORLD } from './config.js';
-import { missionMarker } from './missions.js';
+import { RACE, missionMarker } from './missions.js';
 import { playerCar } from './player.js';
 
 export const SCREEN_TITLE = 'title';
@@ -204,28 +204,38 @@ export function createRenderer(canvas) {
     ctx.beginPath();
     ctx.ellipse(3, 5, spec.length / 2, spec.width / 2 + 3, 0, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = '#222';
-    const wl = spec.length * 0.32;
-    const ww = spec.width / 2 + 2;
-    ctx.fillRect(-wl, -ww - 2, 10, 5);
-    ctx.fillRect(wl - 10, -ww - 2, 10, 5);
-    ctx.fillRect(-wl, ww - 3, 10, 5);
-    ctx.fillRect(wl - 10, ww - 3, 10, 5);
+    // A boat has no wheels: a hull, a white deck stripe and a red cabin.
+    if (car.kind !== 'boat') {
+      ctx.fillStyle = '#222';
+      const wl = spec.length * 0.32;
+      const ww = spec.width / 2 + 2;
+      ctx.fillRect(-wl, -ww - 2, 10, 5);
+      ctx.fillRect(wl - 10, -ww - 2, 10, 5);
+      ctx.fillRect(-wl, ww - 3, 10, 5);
+      ctx.fillRect(wl - 10, ww - 3, 10, 5);
+    }
     ctx.fillStyle = car.color;
     roundRect(ctx, -spec.length / 2, -spec.width / 2, spec.length, spec.width, 8);
     ctx.fill();
+    if (car.kind === 'boat') {
+      ctx.fillStyle = '#e63946';
+      roundRect(ctx, -spec.length * 0.18, -spec.width / 2 + 4, spec.length * 0.28, spec.width - 8, 5);
+      ctx.fill();
+    }
     ctx.fillStyle = 'rgba(255,255,255,0.35)';
     roundRect(ctx, spec.length * 0.08, -spec.width / 2 + 3, spec.length * 0.22, spec.width - 6, 4);
     ctx.fill();
     ctx.fillStyle = shade(car.color, -30);
     roundRect(ctx, -spec.length * 0.28, -spec.width / 2 + 4, spec.length * 0.3, spec.width - 8, 5);
     ctx.fill();
-    ctx.fillStyle = '#fff8d6';
-    ctx.fillRect(spec.length / 2 - 4, -spec.width / 2 + 4, 4, 5);
-    ctx.fillRect(spec.length / 2 - 4, spec.width / 2 - 9, 4, 5);
-    ctx.fillStyle = '#e63946';
-    ctx.fillRect(-spec.length / 2, -spec.width / 2 + 4, 4, 5);
-    ctx.fillRect(-spec.length / 2, spec.width / 2 - 9, 4, 5);
+    if (car.kind !== 'boat') {
+      ctx.fillStyle = '#fff8d6';
+      ctx.fillRect(spec.length / 2 - 4, -spec.width / 2 + 4, 4, 5);
+      ctx.fillRect(spec.length / 2 - 4, spec.width / 2 - 9, 4, 5);
+      ctx.fillStyle = '#e63946';
+      ctx.fillRect(-spec.length / 2, -spec.width / 2 + 4, 4, 5);
+      ctx.fillRect(-spec.length / 2, spec.width / 2 - 9, 4, 5);
+    }
     if (car.kind === 'taxi') {
       ctx.fillStyle = '#111';
       ctx.fillRect(-6, -5, 14, 10);
@@ -262,6 +272,14 @@ export function createRenderer(canvas) {
 
   function drawPerson(ped, isPlayer, time) {
     const bob = Math.sin(ped.phase || 0) * 1.5;
+    // A jump lifts the body off its ground shadow; cover crouches
+    // it behind a dark wall line.
+    const lift = (ped.z || 0) * 0.6;
+    // A swimmer sits low in the water: smaller body, ringed by the bay.
+    const bodyR = ped.cover ? 8 : ped.swimming ? 7 : 10;
+    // A dead body fades out over its last two seconds on the street.
+    const deadFade = ped.dead ? Math.max(0, Math.min(1, ped.down / 2)) : 1;
+    if (deadFade < 1) ctx.globalAlpha = deadFade;
     ctx.fillStyle = PALETTE.shadow;
     ctx.beginPath();
     ctx.ellipse(ped.x + 3, ped.y + 7, 11, 6, 0, 0, Math.PI * 2);
@@ -275,40 +293,103 @@ export function createRenderer(canvas) {
       ctx.beginPath();
       ctx.arc(ped.x + Math.cos(ped.angle) * 12, ped.y + Math.sin(ped.angle) * 12, 5, 0, Math.PI * 2);
       ctx.fill();
+      if (deadFade < 1) ctx.globalAlpha = 1;
       return;
+    }
+    if (ped.cover) {
+      ctx.strokeStyle = 'rgba(40,40,40,0.85)';
+      ctx.lineWidth = 5;
+      const px = Math.cos(ped.cover.angle + Math.PI / 2);
+      const py = Math.sin(ped.cover.angle + Math.PI / 2);
+      const bx = ped.x - Math.cos(ped.cover.angle) * 14;
+      const by = ped.y - Math.sin(ped.cover.angle) * 14;
+      ctx.beginPath();
+      ctx.moveTo(bx - px * 16, by - py * 16);
+      ctx.lineTo(bx + px * 16, by + py * 16);
+      ctx.stroke();
     }
     ctx.fillStyle = ped.shirt;
     ctx.beginPath();
-    ctx.arc(ped.x, ped.y + bob * 0.3, 10, 0, Math.PI * 2);
+    ctx.arc(ped.x, ped.y - lift + bob * 0.3, bodyR, 0, Math.PI * 2);
     ctx.fill();
     ctx.fillStyle = ped.skin;
     ctx.beginPath();
-    ctx.arc(ped.x, ped.y - 2 + bob * 0.3, 6, 0, Math.PI * 2);
+    ctx.arc(ped.x, ped.y - 2 - lift + bob * 0.3, 6, 0, Math.PI * 2);
     ctx.fill();
+    if (ped.swimming) {
+      ctx.strokeStyle = 'rgba(33, 158, 188, 0.75)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.ellipse(ped.x, ped.y + 4, 14, 7, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
     if (ped.kind === 'cop') {
       ctx.fillStyle = '#14213d';
       ctx.beginPath();
-      ctx.arc(ped.x, ped.y - 4 + bob * 0.3, 6, Math.PI, Math.PI * 2);
+      ctx.arc(ped.x, ped.y - 4 - lift + bob * 0.3, 6, Math.PI, Math.PI * 2);
       ctx.fill();
     }
     if (isPlayer) {
       ctx.fillStyle = '#ffb703';
       ctx.beginPath();
-      ctx.arc(ped.x, ped.y - 4 + bob * 0.3, 6, Math.PI, Math.PI * 2);
+      ctx.arc(ped.x, ped.y - 4 - lift + bob * 0.3, 6, Math.PI, Math.PI * 2);
       ctx.fill();
       ctx.strokeStyle = '#fff';
       ctx.lineWidth = 2.5;
       ctx.beginPath();
-      ctx.arc(ped.x, ped.y, 16, 0, Math.PI * 2);
+      ctx.arc(ped.x, ped.y - lift, 16, 0, Math.PI * 2);
       ctx.stroke();
       ctx.strokeStyle = 'rgba(0,0,0,0.4)';
       ctx.lineWidth = 3;
       ctx.beginPath();
-      ctx.moveTo(ped.x, ped.y);
-      ctx.lineTo(ped.x + Math.cos(ped.angle) * 22, ped.y + Math.sin(ped.angle) * 22);
+      ctx.moveTo(ped.x, ped.y - lift);
+      ctx.lineTo(ped.x + Math.cos(ped.angle) * 22, ped.y - lift + Math.sin(ped.angle) * 22);
       ctx.stroke();
     }
+    if (deadFade < 1) ctx.globalAlpha = 1;
     void time;
+  }
+
+  function drawHeli(state) {
+    const heli = state.heli;
+    if (!heli) return;
+    ctx.fillStyle = 'rgba(0,0,0,0.3)';
+    ctx.beginPath();
+    ctx.ellipse(heli.x + 40, heli.y + 50, 26, 12, 0, 0, Math.PI * 2);
+    ctx.fill();
+    const mins = state.clockMinutes;
+    const nightF = state.dusk ? 0.85 : mins < 17 * 60 ? 0 : mins < 19 * 60 ? (mins - 17 * 60) / 120 : 1;
+    if (nightF > 0.05) {
+      ctx.fillStyle = `rgba(255, 242, 192, ${0.2 * nightF})`;
+      ctx.beginPath();
+      ctx.moveTo(heli.x, heli.y);
+      ctx.lineTo(state.player.x - 50, state.player.y);
+      ctx.lineTo(state.player.x + 50, state.player.y);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = `rgba(255, 242, 192, ${0.3 * nightF})`;
+      ctx.beginPath();
+      ctx.arc(state.player.x, state.player.y, 60, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.save();
+    ctx.translate(heli.x, heli.y);
+    ctx.rotate(heli.angle);
+    ctx.fillStyle = '#1d3557';
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 24, 11, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#f8f9fa';
+    ctx.fillRect(-20, -3, 40, 6);
+    ctx.fillStyle = '#1d3557';
+    ctx.fillRect(-42, -2, 24, 4);
+    ctx.restore();
+    ctx.strokeStyle = 'rgba(20,20,20,0.8)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(heli.x - Math.cos(heli.rotor) * 34, heli.y - Math.sin(heli.rotor) * 34);
+    ctx.lineTo(heli.x + Math.cos(heli.rotor) * 34, heli.y + Math.sin(heli.rotor) * 34);
+    ctx.stroke();
   }
 
   function drawMarker(state) {
@@ -332,6 +413,53 @@ export function createRenderer(canvas) {
       ctx.beginPath();
       ctx.arc(state.sideJob.target.x, state.sideJob.target.y - 34, 10, 0, Math.PI * 2);
       ctx.fill();
+    }
+  }
+
+  /** Minigame fixtures: the dartboard on the Neon Club (always there)
+   * with the oche line south of it, and the shooting-range targets
+   * while a range game is running. */
+  function drawMinigames(state) {
+    const club = state.city.property;
+    const rings = [[64, '#f8f9fa'], [44, '#e63946'], [26, '#f8f9fa'], [12, '#e63946']];
+    for (const [r, color] of rings) {
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(club.x, club.y, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.strokeStyle = '#1d3557';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(club.x, club.y, 64, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(club.x - 30, club.y + 120);
+    ctx.lineTo(club.x + 30, club.y + 120);
+    ctx.stroke();
+    const mg = state.minigame;
+    if (mg && mg.active && mg.kind === 'range') {
+      for (const target of mg.targets) {
+        if (target.down) {
+          ctx.fillStyle = '#6c757d';
+          ctx.beginPath();
+          ctx.ellipse(target.x, target.y, 16, 5, 0, 0, Math.PI * 2);
+          ctx.fill();
+          continue;
+        }
+        ctx.fillStyle = '#8d0801';
+        ctx.fillRect(target.x - 2, target.y, 4, 22);
+        ctx.fillStyle = '#f8f9fa';
+        ctx.beginPath();
+        ctx.arc(target.x, target.y - 12, 15, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#e63946';
+        ctx.beginPath();
+        ctx.arc(target.x, target.y - 12, 6, 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
   }
 
@@ -380,6 +508,35 @@ export function createRenderer(canvas) {
       ctx.textAlign = 'center';
       ctx.fillText('$', drop.x, drop.y + 4);
     }
+    for (const tape of state.city.tapes) {
+      if (tape.taken || !visible(tape.x, tape.y)) continue;
+      ctx.fillStyle = '#ffd60a';
+      ctx.strokeStyle = '#b8860b';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(tape.x, tape.y - 9);
+      ctx.lineTo(tape.x + 9, tape.y);
+      ctx.lineTo(tape.x, tape.y + 9);
+      ctx.lineTo(tape.x - 9, tape.y);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    }
+    // Cielo Arms: a green shopfront block with a dollar sign.
+    ctx.fillStyle = '#2a9d8f';
+    ctx.fillRect(state.city.gunShop.x - 10, state.city.gunShop.y - 10, 20, 20);
+    ctx.fillStyle = '#fff';
+    ctx.font = `800 13px ${FONT}`;
+    ctx.textAlign = 'center';
+    ctx.fillText('$', state.city.gunShop.x, state.city.gunShop.y + 5);
+    // Street-race start: a purple marker until the race is running.
+    if (!state.race.active) {
+      ctx.fillStyle = '#9b5de5';
+      ctx.fillRect(RACE.start.x - 10, RACE.start.y - 10, 20, 20);
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(RACE.start.x - 10, RACE.start.y - 10, 20, 20);
+    }
     for (const lamp of state.city.lamps) {
       if (!visible(lamp.x, lamp.y)) continue;
       ctx.fillStyle = '#3a3a3a';
@@ -425,13 +582,15 @@ export function createRenderer(canvas) {
     if (state.player.onFoot) {
       drawables.push({
         y: state.player.y,
-        fn: () => drawPerson({ ...state.player, shirt: '#fb8500', skin: '#c68642', kind: 'player', phase: state.player.walkPhase, down: 0 }, true, state.time),
+        fn: () => drawPerson({ ...state.player, shirt: state.player.shirt || '#fb8500', skin: state.player.skin || '#c68642', kind: 'player', phase: state.player.walkPhase, down: 0 }, true, state.time),
       });
     }
     drawables.sort((a, b) => a.y - b.y);
     for (const d of drawables) d.fn();
 
+    drawHeli(state);
     drawMarker(state);
+    drawMinigames(state);
 
     for (const bullet of state.bullets) {
       ctx.fillStyle = '#fff3b0';

@@ -108,6 +108,17 @@ export function buildCity(rng) {
     cashDrops.push({ x: block.x - 20, y: block.y + block.h / 2, taken: false, value: 25 });
   }
 
+  // Tide Tapes: 12 collectibles scattered along the roadsides. Finding them
+  // all is a quiet badge of honour — and each one pays a little.
+  const tapes = [];
+  for (let i = 0; i < 12; i += 1) {
+    tapes.push({
+      x: rng.pick(xs) + rng.range(-26, 26),
+      y: rng.range(120, WORLD.beachY - 120),
+      taken: false,
+    });
+  }
+
   return {
     xs,
     ys,
@@ -118,7 +129,10 @@ export function buildCity(rng) {
     boats,
     umbrellas,
     cashDrops,
+    tapes,
     paintShop: { x: 800, y: 480, name: 'Spray Barn' },
+    gunShop: { x: 800, y: 1120, name: 'Cielo Arms' },
+    property: { x: 2080, y: 1440, name: 'Neon Club', price: 2500, income: 120 },
     safehouse: { x: 2560, y: 1440, name: 'Safehouse' },
     clinic: { x: 1600, y: 480, name: 'Solmaris Clinic' },
     garage: { x: 1120, y: 1440, name: "Dario's Garage" },
@@ -132,6 +146,26 @@ export function buildCity(rng) {
       { x: 2720, y: 480 },
     ],
   };
+}
+
+/** True when the point sits inside any building footprint. */
+export function pointInBuilding(city, x, y) {
+  for (const b of city.buildings) {
+    if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) return true;
+  }
+  return false;
+}
+
+/** Line of sight: true when no building blocks the segment. Sampled every
+ * 30 units, so a wall between two points always counts as cover. */
+export function hasLineOfSight(city, x1, y1, x2, y2) {
+  const dist = Math.hypot(x2 - x1, y2 - y1);
+  const steps = Math.max(1, Math.ceil(dist / 30));
+  for (let i = 1; i < steps; i += 1) {
+    const t = i / steps;
+    if (pointInBuilding(city, x1 + (x2 - x1) * t, y1 + (y2 - y1) * t)) return false;
+  }
+  return true;
 }
 
 /** True when the point sits on a road band (either direction). */

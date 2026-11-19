@@ -1,9 +1,16 @@
 // The people of Solmaris: strollers walking block perimeters, beachgoers on
 // the sand, and officers on foot. Pedestrians panic and scatter when a crime
-// happens nearby; nobody here is ever killed, a knocked-down pedestrian gets
-// up, dusts off, and runs. Officers chase the player when the heat is on.
-import { WALK } from './config.js';
+// happens nearby; walkers can be killed — a body lingers, then fades from
+// the street — while officers only get knocked down and get back up.
+// Officers chase the player when the heat is on.
+import { WALK, WORLD } from './config.js';
 import { resolveBuildingCollision } from './world.js';
+
+/** People stay on dry land: the shoreline is a wall for walkers,
+ * officers and anyone fleeing — only the player swims. */
+function dryY(y) {
+  return Math.min(y, WORLD.waterY - 14);
+}
 
 const SHIRTS = ['#e63946', '#2a9d8f', '#ffb703', '#8ecae6', '#f4a261', '#b5838d', '#90be6d', '#dee2e6'];
 const SKINS = ['#f2c89b', '#c68642', '#8d5524', '#ffdbac', '#a0663a'];
@@ -26,6 +33,8 @@ export function createPedestrians(city, rng, count) {
       skin: rng.pick(SKINS),
       panic: 0,
       down: 0,
+      hp: 50,
+      dead: false,
       phase: rng.range(0, 6),
       fare: false,
     });
@@ -44,6 +53,8 @@ export function createPedestrians(city, rng, count) {
       skin: rng.pick(SKINS),
       panic: 0,
       down: 0,
+      hp: 50,
+      dead: false,
       phase: rng.range(0, 6),
       fare: false,
       beach: true,
@@ -69,6 +80,16 @@ export function createOfficer(x, y) {
     phase: 0,
     fare: false,
   };
+}
+
+/** A SWAT officer: faster, tougher (recovers from a knockdown in a
+ * second), and hits harder. Dark gear, same shape as a regular officer. */
+export function createSwatOfficer(x, y) {
+  const officer = createOfficer(x, y);
+  officer.swat = true;
+  officer.speed = 170;
+  officer.shirt = '#2b2d42';
+  return officer;
 }
 
 function perimeterPoint(block, t) {
@@ -101,6 +122,12 @@ export function panicNearby(state, x, y, radius) {
 export function updatePedestrians(state, dt, events) {
   const player = state.player;
   for (const ped of state.peds) {
+    // A dead pedestrian lies where they fell while the body lingers;
+    // the cleanup below removes the body once the linger runs out.
+    if (ped.dead) {
+      ped.down -= dt;
+      continue;
+    }
     if (ped.down > 0) {
       ped.down -= dt;
       continue;
@@ -111,7 +138,7 @@ export function updatePedestrians(state, dt, events) {
       ped.angle = away;
       const [nx, ny] = resolveBuildingCollision(state.city, ped.x + Math.cos(away) * 130 * dt, ped.y + Math.sin(away) * 130 * dt, 11);
       ped.x = nx;
-      ped.y = ny;
+      ped.y = dryY(ny);
       ped.phase += dt * 12;
       continue;
     }
@@ -121,12 +148,22 @@ export function updatePedestrians(state, dt, events) {
         ped.angle = Math.atan2(player.y - ped.y, player.x - ped.x);
         const [nx, ny] = resolveBuildingCollision(state.city, ped.x + Math.cos(ped.angle) * ped.speed * dt, ped.y + Math.sin(ped.angle) * ped.speed * dt, 11);
         ped.x = nx;
-        ped.y = ny;
+        ped.y = dryY(ny);
         ped.phase += dt * 10;
         if (d < 30 && player.onFoot) {
           events.push({ type: 'cop-touch' });
         }
       }
+      continue;
+    }
+    // A random-event thief runs from Lena until caught or gone.
+    if (ped.flee) {
+      const away = Math.atan2(ped.y - player.y, ped.x - player.x);
+      ped.angle = away;
+      const [nx, ny] = resolveBuildingCollision(state.city, ped.x + Math.cos(away) * ped.speed * dt, ped.y + Math.sin(away) * ped.speed * dt, 11);
+      ped.x = nx;
+      ped.y = dryY(ny);
+      ped.phase += dt * 12;
       continue;
     }
     if (ped.beach) {
@@ -147,12 +184,49 @@ export function updatePedestrians(state, dt, events) {
     ped.angle = ped.dir > 0 ? point.angle : point.angle + Math.PI;
     ped.phase += dt * 7;
   }
+  // Bodies whose linger ran out leave the street.
+  state.peds = state.peds.filter((p) => !p.dead || p.down > 0);
 }
 
 /** Knock a pedestrian down (they recover) and raise the heat. */
 export function knockPedestrian(state, ped, events) {
   if (ped.down > 0) return;
-  ped.down = 2.5;
+  // SWAT gets up in a second; everyone else takes 2.5.
+  ped.down = ped.swat ? 1.0 : 2.5;
   ped.panic = 5;
   events.push({ type: 'ped-hit', ped });
+}
+
+/** Hurt a pedestrian. Walkers have 50 HP: a non-lethal hit knocks them
+ * down like before, a lethal one kills them — the body falls, lingers
+ * 6 seconds, then fades from the street, and nearby pedestrians panic.
+ * Officers have no HP: they only get knocked down and get back up.
+ * Returns 'killed' | 'hurt' | 'none' (already dead). The caller reports
+ * the crime through the witness system: a kill counts as a witnessed
+ * crime, so the caller adds the wanted level for it. */
+export function damagePedestrian(state, ped, damage, events) {
+  if (ped.dead) return 'none';
+  if (ped.kind !== 'ped') {
+    knockPedestrian(state, ped, events);
+    return 'hurt';
+  }
+  const hp = (ped.hp ?? 50) - damage;
+  ped.hp = hp;
+  if (hp > 0) {
+    knockPedestrian(state, ped, events);
+    return 'hurt';
+  }
+  ped.dead = true;
+  ped.down = 6;
+  ped.panic = 0;
+  for (let i = 0; i < 6; i += 1) {
+    state.particles.push({
+      x: ped.x + state.rng.range(-8, 8), y: ped.y + state.rng.range(-8, 8),
+      vx: state.rng.range(-30, 30), vy: state.rng.range(-30, 30),
+      life: 0.6, maxLife: 0.6, size: state.rng.range(3, 6), color: '#8d0801',
+    });
+  }
+  panicNearby(state, ped.x, ped.y, 220);
+  events.push({ type: 'ped-killed', ped });
+  return 'killed';
 }

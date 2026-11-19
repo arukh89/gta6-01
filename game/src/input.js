@@ -10,6 +10,17 @@ export const ACT = {
   RELOAD: 8,
   WEAPON_FISTS: 16,
   WEAPON_PISTOL: 32,
+  RADIO: 64,
+  SHOP: 128,
+  WEAPON_SMG: 256,
+  MAP: 512,
+  COVER: 1024,
+  JUMP: 2048,
+  CAMERA: 4096,
+  SLEEP: 8192,
+  SNACK: 16384,
+  SELL_CAR: 32768,
+  SWITCH: 65536,
 };
 
 const UP = new Set(['KeyW', 'ArrowUp']);
@@ -31,8 +42,19 @@ export function createInput(canvas) {
     else if (event.code === 'KeyP' || event.code === 'Escape') actions |= ACT.PAUSE;
     else if (event.code === 'KeyM') actions |= ACT.MUTE;
     else if (event.code === 'KeyR') actions |= ACT.RELOAD;
+    else if (event.code === 'KeyQ') actions |= ACT.RADIO;
+    else if (event.code === 'KeyF') actions |= ACT.SHOP;
+    else if (event.code === 'KeyB') actions |= ACT.MAP;
+    else if (event.code === 'KeyC') actions |= ACT.COVER;
+    else if (event.code === 'Space') actions |= ACT.JUMP;
+    else if (event.code === 'KeyV') actions |= ACT.CAMERA;
+    else if (event.code === 'KeyH') actions |= ACT.SLEEP;
+    else if (event.code === 'KeyG') actions |= ACT.SNACK;
+    else if (event.code === 'KeyJ') actions |= ACT.SELL_CAR;
+    else if (event.code === 'KeyT') actions |= ACT.SWITCH;
     else if (event.code === 'Digit1') actions |= ACT.WEAPON_FISTS;
     else if (event.code === 'Digit2') actions |= ACT.WEAPON_PISTOL;
+    else if (event.code === 'Digit3') actions |= ACT.WEAPON_SMG;
     if (UP.has(event.code) || DOWN.has(event.code) || LEFT.has(event.code) || RIGHT.has(event.code) || event.code === 'Space') {
       event.preventDefault();
     }
@@ -78,6 +100,14 @@ export function createInput(canvas) {
     sprint() {
       return held.has('ShiftLeft') || held.has('ShiftRight');
     },
+    /** Hold X for slow-mo: the world slows, Lena does not. */
+    slowmo() {
+      return held.has('KeyX');
+    },
+    /** Hold Space while driving for the NOS boost. */
+    boost() {
+      return held.has('Space');
+    },
     mouse() {
       return { x: mouseX, y: mouseY };
     },
@@ -89,14 +119,18 @@ export function createInput(canvas) {
       actions = 0;
       return taken;
     },
-    /** Scripted input for screenshot staging: drive forward, no keys needed. */
-    script(throttleValue, steerValue) {
+    /** Scripted input for screenshot staging: drive forward, no keys needed.
+     * `fire` holds the trigger (drive-by staging) and `aim` overrides the
+     * mouse point in screen space, so a staged shot can aim at a cruiser. */
+    script(throttleValue, steerValue, fire, aim) {
       return {
         steer: () => steerValue,
         throttle: () => throttleValue,
         sprint: () => false,
-        mouse: () => ({ x: mouseX, y: mouseY }),
-        isFiring: () => false,
+        slowmo: () => false,
+        boost: () => false,
+        mouse: () => (aim ? { x: aim.x, y: aim.y } : { x: mouseX, y: mouseY }),
+        isFiring: () => !!fire,
         takeActions: () => 0,
       };
     },

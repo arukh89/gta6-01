@@ -2,8 +2,8 @@
 // queue behind the car ahead, and parked cars waiting to be borrowed. Traffic
 // never leaves the roads, so the streets always read as streets from above.
 import { VEHICLES, WORLD } from './config.js';
-import { createCar } from './player.js';
-import { isOnRoad, randomRoadPoint } from './world.js';
+import { clampBoatToWater, createCar } from './player.js';
+import { isOnRoad, randomRoadPoint, resolveBuildingCollision } from './world.js';
 
 const TRAFFIC_TYPES = ['sedan', 'taxi', 'pickup', 'van', 'sedan', 'sports'];
 const PAINTS = ['#e76f51', '#2a9d8f', '#e9c46a', '#6c757d', '#f4a261', '#8ecae6', '#b5838d', '#dee2e6'];
@@ -67,10 +67,28 @@ function atIntersection(city, car) {
 /** Advance every traffic car one step; the player's and police cars are moved elsewhere. */
 export function updateTraffic(state, dt) {
   for (const car of state.cars) {
+    // A driverless car that was left rolling coasts on until friction
+    // stops it; a wall stops it dead. Parked cars sit at speed zero, so
+    // the speed check alone is enough to tell them apart.
+    if (car.driver === 'none' && Math.abs(car.speed) > 1 && !car.exploded) {
+      const fx = Math.cos(car.angle);
+      const fy = Math.sin(car.angle);
+      const [nx, ny] = resolveBuildingCollision(state.city, car.x + fx * car.speed * dt, car.y + fy * car.speed * dt, 22);
+      const stopped = Math.hypot(nx - car.x, ny - car.y) < Math.abs(car.speed) * dt * 0.5;
+      car.x = nx;
+      car.y = ny;
+      // A coasting boat stops at the shore instead of beaching on land.
+      if (car.kind === 'boat' && clampBoatToWater(car)) car.speed = 0;
+      car.speed = stopped ? 0 : car.speed * (1 - Math.min(1, 0.7 * dt));
+      car.vx = fx * car.speed;
+      car.vy = fy * car.speed;
+      continue;
+    }
     if (car.driver !== 'traffic') continue;
-    const target = carAhead(state, car) ? 0 : car.cruise;
+    // Wrecked traffic rolls to a stop on its road and never turns again.
+    const target = car.health <= 0 ? 0 : (carAhead(state, car) ? 0 : car.cruise);
     car.speed += (target - car.speed) * Math.min(1, 3 * dt);
-    if (atIntersection(state.city, car) && state.rng.chance(0.02)) {
+    if (car.health > 0 && atIntersection(state.city, car) && state.rng.chance(0.02)) {
       car.axis = car.axis === 'x' ? 'y' : 'x';
       car.dir = state.rng.chance(0.5) ? 1 : -1;
       if (car.axis === 'x') {

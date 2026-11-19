@@ -12,15 +12,44 @@ export function createAudio() {
   let sirenGain = null;
   let musicTimer = 0;
   let musicStep = 0;
+  let station = 0;
   let muted = false;
   let started = false;
 
-  const CHORDS = [
-    [220.0, 277.18, 329.63],
-    [174.61, 220.0, 261.63],
-    [196.0, 246.94, 293.66],
-    [146.83, 220.0, 293.66],
+  // Four original stations, each with its own key, tempo, wave and melodic
+  // pattern — all synthesized live, no audio files. Melody entries are
+  // indexes into the station's scale (null = rest); bass entries are
+  // semitone offsets from the station root.
+  const STATIONS = [
+    {
+      name: 'SOL BAY FM', freq: '92.4', genre: 'Coastal Pop', wave: 'triangle', bpm: 96, root: 220.0,
+      scale: [0, 2, 4, 7, 9, 12, 14, 16], chord: [4, 7],
+      melody: [0, null, 2, 4, null, 7, 4, 2, 0, null, 2, 4, 7, 9, 7, 4],
+      bass: [0, null, null, null, 7, null, null, null, 5, null, null, null, 7, null, 4, null],
+    },
+    {
+      name: 'NEON NIGHTS', freq: '101.7', genre: 'Synthwave', wave: 'sawtooth', bpm: 112, root: 110.0,
+      scale: [0, 2, 3, 5, 7, 8, 10, 12], chord: [3, 7],
+      melody: [0, null, null, 3, null, 5, 7, null, 5, null, 3, 2, null, 0, null, null],
+      bass: [0, 0, null, 0, 3, null, 3, null, 5, null, 5, null, 7, null, 5, 3],
+    },
+    {
+      name: 'PALMA JAZZ', freq: '96.3', genre: 'Marina Jazz', wave: 'sine', bpm: 84, root: 130.81,
+      scale: [0, 3, 5, 7, 10, 12, 15, 17], chord: [3, 10],
+      melody: [0, null, 2, null, 4, 2, null, 1, 0, null, 3, 2, null, 4, null, 2],
+      bass: [0, null, null, null, 10, null, null, null, 7, null, null, null, 5, null, 7, null],
+    },
+    {
+      name: 'HARBOR BEAT', freq: '104.5', genre: 'Dance', wave: 'sawtooth', bpm: 122, root: 87.31, kick: true,
+      scale: [0, 2, 3, 5, 7, 10, 12], chord: [3, 7],
+      melody: [0, null, 2, null, 4, null, 2, 0, 5, null, 4, 2, null, 0, null, null],
+      bass: [0, null, 0, null, 0, null, 0, null, 3, null, 0, null, 5, null, 3, null],
+    },
   ];
+
+  function semi(root, n) {
+    return root * Math.pow(2, n / 12);
+  }
 
   function ensure() {
     if (context) return true;
@@ -105,6 +134,28 @@ export function createAudio() {
     isStarted() {
       return started;
     },
+    /** Radio station the sequencer is playing (0..3). */
+    stationIndex() {
+      return station;
+    },
+    stationLabel() {
+      const st = STATIONS[station];
+      return `♪ ${st.name} ${st.freq}`;
+    },
+    stationCount() {
+      return STATIONS.length;
+    },
+    setStation(i) {
+      station = ((i % STATIONS.length) + STATIONS.length) % STATIONS.length;
+      musicStep = 0;
+      musicTimer = 0;
+    },
+    nextStation() {
+      this.setStation(station + 1);
+      tone(660, 0.09, 'sine', 0.12);
+      setTimeout(() => tone(880, 0.12, 'sine', 0.12), 90);
+      return this.stationLabel();
+    },
     shot() {
       noise(0.14, 0.5, 2600);
     },
@@ -126,6 +177,18 @@ export function createAudio() {
     busted() {
       tone(392, 0.5, 'sawtooth', 0.2, 196);
     },
+    /** A stolen car's alarm: two-tone, hard to miss. */
+    alarm() {
+      tone(1240, 0.12, 'square', 0.12);
+      setTimeout(() => tone(930, 0.12, 'square', 0.12), 130);
+      setTimeout(() => tone(1240, 0.12, 'square', 0.12), 260);
+      setTimeout(() => tone(930, 0.18, 'square', 0.12), 390);
+    },
+    /** A car or helicopter exploding: a low, long noise burst. */
+    explosion() {
+      noise(0.7, 0.6, 300);
+      tone(70, 0.6, 'sine', 0.35, 35);
+    },
     /** Continuous layers, called every frame with the live situation. */
     update(dt, speed, policeNear, time) {
       if (!context || muted) return;
@@ -137,12 +200,26 @@ export function createAudio() {
         sirenGain.gain.value = policeNear ? 0.05 : 0;
         sirenOsc.frequency.value = 660 + Math.sin(time * 5) * 160;
       }
+      // Radio: an eighth-note step sequencer per station — lead melody,
+      // bass line, four-on-the-floor kick on the dance station, and a soft
+      // pad chord every 32 steps.
+      const st = STATIONS[station];
+      const stepDur = 60 / st.bpm / 2;
       musicTimer += dt;
-      if (musicTimer > 2.4) {
-        musicTimer = 0;
-        const chord = CHORDS[musicStep % CHORDS.length];
+      while (musicTimer >= stepDur) {
+        musicTimer -= stepDur;
+        const s = musicStep;
         musicStep += 1;
-        for (const freq of chord) tone(freq, 2.2, 'triangle', 0.045);
+        const mel = st.melody[s % st.melody.length];
+        if (mel !== null && mel !== undefined) {
+          tone(semi(st.root * 2, st.scale[mel % st.scale.length]), stepDur * 1.8, st.wave, 0.05);
+        }
+        const bass = st.bass[s % st.bass.length];
+        if (bass !== null && bass !== undefined) tone(semi(st.root, bass), stepDur * 1.9, st.wave, 0.07);
+        if (st.kick && s % 4 === 0) tone(55, 0.14, 'sine', 0.14);
+        if (s % 32 === 0) {
+          for (const n of [0, st.chord[0], st.chord[1]]) tone(semi(st.root, n), 2.4, 'triangle', 0.03);
+        }
       }
     },
   };
