@@ -5,7 +5,8 @@
 // long shadows and a dusk tint carry the sun-soaked look.
 import { FONT, PALETTE, VEHICLES, WORLD } from './config.js';
 import { BRIDGE_DECK, RIVER, bridgeCrossings, waterYAt } from './world.js';
-import { RACE, crewJobStartPoints, missionMarker } from './missions.js';
+import { RACE, missionMarker } from './missions.js';
+import { crewJobStartPoints } from './missions.js';
 import { playerCar } from './player.js';
 
 export const SCREEN_TITLE = 'title';
@@ -64,11 +65,11 @@ export function buildGround(city) {
     else ctx.lineTo(x, waterYAt(x));
   }
   ctx.stroke();
-  // The river: a wide, deep channel with sandy banks and a bright current,
-  // so it reads as a river — not a canal — on the map and in 3D. Deeper
-  // than the bay (dark main water, bright centre flow), and it meets the
-  // bay at the coast curve, extended a little past it so the mouth never
-  // gaps where the coast wave dips.
+  // The river: a broad, deep channel with sandy banks and a bright
+  // current, so it reads as a river — not a canal — on the map and in
+  // 3D. Darker than the bay (deep main water, bright centre flow), and
+  // it meets the bay at the coast curve, stretched a little past it so
+  // the mouth never gaps where the coast wave dips.
   const riverTop = 24;
   const riverBottom = waterYAt(1920) + 30;
   const riverLen = riverBottom - riverTop;
@@ -127,11 +128,11 @@ export function buildGround(city) {
     ['SUNSET ROW', 900, city.ys[3]],
   ];
   for (const [text, x, y] of labels) ctx.fillText(text, x, y);
-  // Bridges: a deck over the river at every road crossing, drawn last so
-  // each one reads as a bridge — not a road that happens to continue.
+  // Bridges: a deck over the river at every road crossing, painted last
+  // so each one reads as a bridge — not a road that happens to continue.
   // The landmark (Coral Boulevard) is a wider gold deck whose edges bow
   // out at mid-river, an arch in plan, with white rails and posts; the
-  // rest are pale concrete decks with white rails and a gold centre line.
+  // others are pale concrete decks with white rails and a gold centre line.
   const bow = 20; // control-point offset; the edge bulges bow/2 at mid-river
   for (const { y, landmark } of bridgeCrossings(city)) {
     const half = landmark ? BRIDGE_DECK.landmark : BRIDGE_DECK.standard;
@@ -166,7 +167,7 @@ export function buildGround(city) {
       ctx.lineTo(bx1, y + half - 3);
     }
     ctx.stroke();
-    // Centre line: the road continues over the deck.
+    // Centre line: the road carries on over the deck.
     ctx.strokeStyle = landmark ? '#4a4a52' : '#e9c46a';
     ctx.lineWidth = 3;
     ctx.setLineDash([26, 22]);
@@ -175,7 +176,7 @@ export function buildGround(city) {
     ctx.lineTo(bx1, y);
     ctx.stroke();
     ctx.setLineDash([]);
-    // Posts on the landmark rails, on the bowed curve.
+    // Posts along the landmark rails, sitting on the bowed curve.
     if (landmark) {
       ctx.fillStyle = '#fff';
       for (const t of [0.25, 0.5, 0.75]) {
@@ -223,9 +224,9 @@ export function createRenderer(canvas) {
   }
 
   /** One extruded box: shadow, two shaded sides, top face with windows.
-   * The box's ground footprint is (x, y, w, h); its top face is shifted
-   * up by the extrusion lift. Small boxes (thin L arms, narrow tiers)
-   * skip the fixed-size window grid so no window can stick out. */
+   * The box stands on the ground footprint (x, y, w, h); its top face is
+   * shifted up by the extrusion lift. Small boxes (thin L wings, narrow
+   * tiers) skip the fixed-size window grid, so no window can stick out. */
   function drawBox(x, y, w, h, height, color, time, sign) {
     const lift = height * 0.58;
     ctx.fillStyle = PALETTE.shadow;
@@ -260,8 +261,8 @@ export function createRenderer(canvas) {
     }
   }
 
-  /** A rooftop feature on the topmost face, so silhouettes differ even
-   * from the chase cam. top is the top face's screen rect. */
+  /** A rooftop feature on the highest face, so the silhouettes differ even
+   * from the chase cam. top is that face's screen rectangle. */
   function drawRoofDetail(top, roof) {
     const rx = top.x + roof.fx * top.w;
     const ry = top.y + roof.fy * top.h;
@@ -306,7 +307,7 @@ export function createRenderer(canvas) {
     drawBox(b.x, b.y, b.w, b.h, baseH, b.color, time, b.sign);
     if (b.upper) {
       const u = b.upper;
-      // The upper tier stands on the base roof: its ground is the base's
+      // The upper storey stands on the base roof: its ground is the base's
       // top face, shifted up by the base lift; a lighter shade reads as
       // a separate tier catching the light.
       const lift = baseH * 0.58;
@@ -317,8 +318,8 @@ export function createRenderer(canvas) {
       drawBox(a.x, a.y, a.w, a.h, a.height, b.color, time, null);
     }
     if (b.roof) {
-      // Topmost face in screen space: the upper tier's top face, else
-      // the base's top face.
+      // Highest face in screen space: the upper tier's top face, or the
+      // base's top face when there is no tier.
       const top = b.upper
         ? { x: b.upper.x, y: b.upper.y - baseH * 0.58 * 0.55 - b.upper.height * 0.58 * 0.55, w: b.upper.w, h: b.upper.h }
         : { x: b.x, y: b.y - baseH * 0.58 * 0.55, w: b.w, h: b.h };
@@ -359,37 +360,37 @@ export function createRenderer(canvas) {
     }
   }
 
-  /** Street furniture, top-down: each kind reads at a glance, so a
-   * corner never looks like another corner. */
-  function drawProp(prop) {
+  /** Street furniture, top-down: each kind reads at a glance, so no
+   * corner ever looks like another corner. */
+  function drawProp(item) {
     ctx.save();
-    ctx.translate(prop.x, prop.y);
-    if (prop.kind === 'billboard' || prop.kind === 'neon-sign') {
-      ctx.rotate(prop.angle);
+    ctx.translate(item.x, item.y);
+    if (item.kind === 'billboard' || item.kind === 'neon-sign') {
+      ctx.rotate(item.angle);
       ctx.fillStyle = '#3a3a3a';
       ctx.fillRect(-2, -2, 4, 4);
-      ctx.fillStyle = prop.color;
+      ctx.fillStyle = item.color;
       ctx.fillRect(-13, -16, 26, 9);
       ctx.fillStyle = 'rgba(255,255,255,0.75)';
       ctx.fillRect(-10, -14, 20, 2);
-    } else if (prop.kind === 'vendor') {
-      ctx.rotate(prop.angle);
+    } else if (item.kind === 'vendor') {
+      ctx.rotate(item.angle);
       ctx.fillStyle = '#6d4c41';
       ctx.fillRect(-9, -6, 18, 12);
-      ctx.fillStyle = prop.color;
+      ctx.fillStyle = item.color;
       ctx.fillRect(-11, -9, 22, 5);
       ctx.fillStyle = '#f8f9fa';
       ctx.fillRect(-11, -9, 7, 5);
       ctx.fillRect(4, -9, 7, 5);
-    } else if (prop.kind === 'bench') {
-      ctx.fillStyle = prop.color;
+    } else if (item.kind === 'bench') {
+      ctx.fillStyle = item.color;
       ctx.fillRect(-11, -4, 22, 4);
       ctx.fillRect(-11, 2, 22, 4);
       ctx.fillStyle = '#3a3a3a';
       ctx.fillRect(-9, -6, 3, 3);
       ctx.fillRect(6, -6, 3, 3);
-    } else if (prop.kind === 'hydrant') {
-      ctx.fillStyle = prop.color;
+    } else if (item.kind === 'hydrant') {
+      ctx.fillStyle = item.color;
       ctx.beginPath();
       ctx.arc(0, 0, 5, 0, Math.PI * 2);
       ctx.fill();
@@ -397,16 +398,16 @@ export function createRenderer(canvas) {
       ctx.beginPath();
       ctx.arc(0, 0, 2, 0, Math.PI * 2);
       ctx.fill();
-    } else if (prop.kind === 'planter') {
+    } else if (item.kind === 'planter') {
       ctx.fillStyle = '#8d5524';
       ctx.beginPath();
       ctx.arc(0, 0, 8, 0, Math.PI * 2);
       ctx.fill();
-      ctx.fillStyle = prop.color;
+      ctx.fillStyle = item.color;
       ctx.beginPath();
       ctx.arc(0, 0, 5, 0, Math.PI * 2);
       ctx.fill();
-    } else if (prop.kind === 'lifeguard') {
+    } else if (item.kind === 'lifeguard') {
       ctx.strokeStyle = '#8d5524';
       ctx.lineWidth = 2;
       ctx.beginPath();
@@ -417,17 +418,17 @@ export function createRenderer(canvas) {
       ctx.stroke();
       ctx.fillStyle = '#f8f9fa';
       ctx.fillRect(-8, -12, 16, 8);
-      ctx.fillStyle = prop.color;
+      ctx.fillStyle = item.color;
       ctx.fillRect(-9, -15, 18, 4);
-    } else if (prop.kind === 'crate') {
-      ctx.fillStyle = prop.color;
+    } else if (item.kind === 'crate') {
+      ctx.fillStyle = item.color;
       ctx.fillRect(-8, -8, 14, 14);
-      ctx.fillStyle = shade(prop.color, -30);
+      ctx.fillStyle = shade(item.color, -30);
       ctx.fillRect(-8, -8, 14, 3);
       ctx.fillRect(-8, -8, 3, 14);
-      ctx.fillStyle = shade(prop.color, 20);
+      ctx.fillStyle = shade(item.color, 20);
       ctx.fillRect(2, -14, 10, 10);
-    } else if (prop.kind === 'dockpost') {
+    } else if (item.kind === 'dockpost') {
       ctx.fillStyle = '#3a3a3a';
       ctx.beginPath();
       ctx.arc(0, 0, 4, 0, Math.PI * 2);
@@ -436,13 +437,13 @@ export function createRenderer(canvas) {
       ctx.beginPath();
       ctx.arc(0, 0, 2, 0, Math.PI * 2);
       ctx.fill();
-    } else if (prop.kind === 'picnic') {
-      ctx.fillStyle = prop.color;
+    } else if (item.kind === 'picnic') {
+      ctx.fillStyle = item.color;
       ctx.fillRect(-12, -5, 24, 10);
       ctx.fillRect(-12, -10, 24, 3);
       ctx.fillRect(-12, 7, 24, 3);
-    } else if (prop.kind === 'mailbox') {
-      ctx.fillStyle = prop.color;
+    } else if (item.kind === 'mailbox') {
+      ctx.fillStyle = item.color;
       ctx.fillRect(-5, -7, 10, 14);
       ctx.fillStyle = '#f8f9fa';
       ctx.fillRect(-5, -7, 10, 3);
@@ -474,7 +475,7 @@ export function createRenderer(canvas) {
     ctx.fill();
     if (car.kind === 'boat') {
       // A speedboat reads as a longer hull with a pale canopy; a skiff
-      // keeps the red cabin.
+      // keeps its red cabin.
       if (car.variant === 'speedboat') {
         ctx.fillStyle = '#f8f9fa';
         roundRect(ctx, -spec.length * 0.1, -spec.width / 2 + 3, spec.length * 0.3, spec.width - 6, 6);
@@ -485,7 +486,7 @@ export function createRenderer(canvas) {
         ctx.fill();
       }
     }
-    // Police livery, from the car id: 0 = white doors, 1 = white side
+    // Patrol paint, from the car id: 0 = white doors, 1 = white side
     // stripe, 2 = white roof. Every cruiser reads differently.
     if (car.kind === 'police') {
       ctx.fillStyle = '#f8f9fa';
@@ -507,7 +508,7 @@ export function createRenderer(canvas) {
     ctx.fill();
     // Body shapes: a truck carries an open bed, a van is a tall box, a
     // coupe and a sports car wear a rear spoiler, a hatch is short
-    // with its cabin forward.
+    // with its cabin pushed forward.
     if (car.kind === 'truck') {
       ctx.fillStyle = shade(car.color, -45);
       ctx.fillRect(-spec.length / 2 + 2, -spec.width / 2 + 3, spec.length * 0.34, spec.width - 6);
@@ -570,6 +571,35 @@ export function createRenderer(canvas) {
     }
   }
 
+  /** A hat over the top of the head: cap (half-disc), beanie (dome) or
+   * wide-brim (brim + crown). Cops keep the dark cap, the player the gold
+   * one; walkers wear theirs. */
+  function drawHat(hat, hatColor, hx, hy, scale) {
+    ctx.fillStyle = hatColor;
+    ctx.beginPath();
+    if (hat === 'cap') {
+      ctx.arc(hx, hy - 2, 6 * scale, Math.PI, Math.PI * 2);
+    } else if (hat === 'beanie') {
+      ctx.arc(hx, hy, 6.8 * scale, Math.PI * 0.75, Math.PI * 2.25);
+    } else if (hat === 'wide') {
+      ctx.arc(hx, hy - 2, 5 * scale, Math.PI, Math.PI * 2);
+    } else {
+      return;
+    }
+    ctx.fill();
+  }
+
+  /** A named local's name above their head, white on a dark outline. */
+  function drawNameTag(name, x, y, scale) {
+    ctx.font = `700 11px ${FONT}`;
+    ctx.textAlign = 'center';
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(0,0,0,0.75)';
+    ctx.strokeText(name, x, y - 24 * scale);
+    ctx.fillStyle = '#fff';
+    ctx.fillText(name, x, y - 24 * scale);
+  }
+
   function drawPerson(ped, isPlayer, time) {
     // Every person reads differently: height, build, trousers, hat.
     const scale = ped.scale ?? 1;
@@ -623,11 +653,13 @@ export function createRenderer(canvas) {
     ctx.beginPath();
     ctx.ellipse(ped.x, ped.y - lift + bob * 0.3, bodyR * scale * build, bodyR * scale, ped.angle + Math.PI / 2, 0, Math.PI * 2);
     ctx.fill();
-    // A wide-brim hat reads from above as a brim around the head.
+    // Which hat and colour: the player keeps gold, cops keep dark, walkers
+    // wear their own.
     const hatColor = isPlayer ? '#ffb703' : ped.kind === 'cop' ? '#14213d' : (ped.hatColor ?? '#333');
     const hat = isPlayer ? (ped.hat ?? 'cap') : ped.kind === 'cop' ? 'cap' : (ped.hat ?? 'none');
     const hx = ped.x;
     const hy = ped.y - 2 - lift + bob * 0.3;
+    // A wide-brim hat reads from above as a brim around the head.
     if (hat === 'wide') {
       ctx.fillStyle = hatColor;
       ctx.beginPath();
@@ -645,24 +677,7 @@ export function createRenderer(canvas) {
       ctx.ellipse(ped.x, ped.y + 4, 14, 7, 0, 0, Math.PI * 2);
       ctx.stroke();
     }
-    // Hats: a cap or a beanie over the top of the head. Cops keep their
-    // dark cap, the player keeps the gold one; walkers wear theirs.
-    if (hat === 'cap') {
-      ctx.fillStyle = hatColor;
-      ctx.beginPath();
-      ctx.arc(hx, hy - 2, 6 * scale, Math.PI, Math.PI * 2);
-      ctx.fill();
-    } else if (hat === 'beanie') {
-      ctx.fillStyle = hatColor;
-      ctx.beginPath();
-      ctx.arc(hx, hy, 6.8 * scale, Math.PI * 0.75, Math.PI * 2.25);
-      ctx.fill();
-    } else if (hat === 'wide') {
-      ctx.fillStyle = hatColor;
-      ctx.beginPath();
-      ctx.arc(hx, hy - 2, 5 * scale, Math.PI, Math.PI * 2);
-      ctx.fill();
-    }
+    drawHat(hat, hatColor, hx, hy, scale);
     if (isPlayer) {
       ctx.strokeStyle = '#fff';
       ctx.lineWidth = 2.5;
@@ -677,15 +692,7 @@ export function createRenderer(canvas) {
       ctx.stroke();
     }
     // A named local gets their name above their head.
-    if (ped.name) {
-      ctx.font = `700 11px ${FONT}`;
-      ctx.textAlign = 'center';
-      ctx.lineWidth = 3;
-      ctx.strokeStyle = 'rgba(0,0,0,0.75)';
-      ctx.strokeText(ped.name, ped.x, ped.y - 24 * scale);
-      ctx.fillStyle = '#fff';
-      ctx.fillText(ped.name, ped.x, ped.y - 24 * scale);
-    }
+    if (ped.name) drawNameTag(ped.name, ped.x, ped.y, scale);
     if (deadFade < 1) ctx.globalAlpha = 1;
     void time;
   }
@@ -877,9 +884,11 @@ export function createRenderer(canvas) {
       ctx.lineWidth = 2;
       ctx.strokeRect(RACE.start.x - 10, RACE.start.y - 10, 20, 20);
     }
-    // Crew-job starts: gold markers at the jobs that can be started now.
+    // Crew-job starts: gold markers at the jobs that can be started now
+    // (same size and outline as the race marker, a different colour).
+    const gold = '#ffb703';
     for (const p of crewJobStartPoints(state)) {
-      ctx.fillStyle = '#ffb703';
+      ctx.fillStyle = gold;
       ctx.fillRect(p.x - 10, p.y - 10, 20, 20);
       ctx.strokeStyle = '#fff';
       ctx.lineWidth = 2;
@@ -909,6 +918,7 @@ export function createRenderer(canvas) {
       roundRect(ctx, -26, -9, 52, 18, 8);
       ctx.fill();
       if (boat.variant === 'speedboat') {
+        // A speedboat's pale canopy; a skiff keeps the red cabin.
         ctx.fillStyle = '#8ecae6';
         roundRect(ctx, -6, -6, 18, 12, 5);
         ctx.fill();
@@ -921,16 +931,16 @@ export function createRenderer(canvas) {
 
     const drawables = [];
     for (const b of state.city.buildings) {
-      // Depth key is the union's south edge, so an L arm reaching south
-      // of its base still sorts in front of what it overlaps.
+      // The depth key is the union's south edge, so an L wing reaching
+      // south of its base still sorts in front of what it overlaps.
       const south = Math.max(b.y + b.h, b.arm ? b.arm.y + b.arm.h : 0);
       if (visible(b.x + b.w / 2, b.y + b.h / 2)) drawables.push({ y: south, fn: () => drawBuilding(b, state.time) });
     }
     for (const tree of state.city.trees) {
       if (visible(tree.x, tree.y)) drawables.push({ y: tree.y, fn: () => drawTree(tree) });
     }
-    for (const prop of state.city.props) {
-      if (visible(prop.x, prop.y)) drawables.push({ y: prop.y, fn: () => drawProp(prop) });
+    for (const item of state.city.props) {
+      if (visible(item.x, item.y)) drawables.push({ y: item.y, fn: () => drawProp(item) });
     }
     const heroCar = playerCar(state);
     for (const car of state.cars) {

@@ -12,7 +12,8 @@
 import * as THREE from 'three';
 import { PALETTE, VEHICLES, WORLD } from './config.js';
 import { buildGround } from './render.js';
-import { CREW_JOBS, RACE, crewJobStartPoints, missionMarker } from './missions.js';
+import { RACE, missionMarker } from './missions.js';
+import { CREW_JOBS, crewJobStartPoints } from './missions.js';
 import { playerCar } from './player.js';
 
 /** How much taller a building reads in 3D than its 2D extrusion height. */
@@ -169,8 +170,9 @@ export function createRenderer3d(canvas) {
   const palmTrunkGeo = new THREE.CylinderGeometry(2.5, 3.5, 28, 6);
   const crownGeo = new THREE.ConeGeometry(20, 7, 6);
   const headGeo = new THREE.SphereGeometry(5.5, 10, 8);
-  // A person is a torso (shirt) over legs (trousers), so outfits read as
-  // more than one colour; hats get their own geometry below.
+  // A person is a torso (shirt) over legs (trousers), so an outfit reads
+  // as more than one colour; hats get their own geometry below (a cap
+  // cylinder, a wide brim disc, a dome for the wide hat's crown).
   const torsoGeo = new THREE.CylinderGeometry(7, 7.5, 12, 8);
   const legsGeo = new THREE.CylinderGeometry(6.5, 7, 6, 8);
   const capGeo = new THREE.CylinderGeometry(6, 6, 3, 10);
@@ -203,7 +205,7 @@ export function createRenderer3d(canvas) {
     return mesh;
   }
 
-  /** A small rooftop feature on the topmost face, sized to it, so
+  /** A small rooftop feature on the highest face, sized to it, so the
    * silhouettes differ even from the chase cam. */
   function addRoofDetail(kind, x, topY, z, tw, th) {
     const s = Math.min(tw, th);
@@ -274,7 +276,7 @@ export function createRenderer3d(canvas) {
       mesh.castShadow = true;
       mesh.receiveShadow = true;
       cityGroup.add(mesh);
-      // Stepped / podium upper tier: a narrower windowed box on the base
+      // Stepped / podium upper storey: a narrower windowed box on the base
       // roof, strictly inside the base footprint.
       if (b.upper) {
         const u = b.upper;
@@ -287,7 +289,7 @@ export function createRenderer3d(canvas) {
         umesh.receiveShadow = true;
         cityGroup.add(umesh);
       }
-      // L arm: a second windowed box at ground level, same palette.
+      // L wing: a second windowed box at ground level, same palette.
       if (b.arm) {
         const a = b.arm;
         const ah3 = a.height * HEIGHT_SCALE;
@@ -299,7 +301,8 @@ export function createRenderer3d(canvas) {
         amesh.receiveShadow = true;
         cityGroup.add(amesh);
       }
-      // Rooftop detail on the topmost face (upper tier if any, else base).
+      // Rooftop feature on the highest face (the upper storey when there
+      // is one, otherwise the base roof).
       if (b.roof) {
         const top = b.upper || b;
         addRoofDetail(b.roof.kind, top.x + b.roof.fx * top.w - CENTER_X, b.height * HEIGHT_SCALE, top.y + b.roof.fy * top.h - CENTER_Y, top.w, top.h);
@@ -357,7 +360,8 @@ export function createRenderer3d(canvas) {
     for (const boat of city.boats) {
       const hull = box(52, 8, 18, lambert('#ffffff'), boat.x - CENTER_X, 4, boat.y - CENTER_Y, cityGroup);
       hull.rotation.y = -boat.angle;
-      // A speedboat wears a pale canopy, a skiff the red cabin.
+      // Cabin by boat variant: a speedboat gets a pale canopy, a skiff
+      // keeps the red cabin.
       const cabin = boat.variant === 'speedboat'
         ? box(20, 6, 12, lambert('#8ecae6'), boat.x - CENTER_X, 11, boat.y - CENTER_Y, cityGroup)
         : box(16, 10, 12, lambert('#e63946'), boat.x - CENTER_X, 12, boat.y - CENTER_Y, cityGroup);
@@ -368,31 +372,31 @@ export function createRenderer3d(canvas) {
     // groups — billboards and neon signs on poles, vendor carts with
     // awnings, benches, hydrants, planters, lifeguard towers, crates,
     // dock posts, picnic tables and mailboxes.
-    for (const prop of city.props) {
-      const x = prop.x - CENTER_X;
-      const z = prop.y - CENTER_Y;
-      if (prop.kind === 'billboard' || prop.kind === 'neon-sign') {
+    for (const item of city.props) {
+      const x = item.x - CENTER_X;
+      const z = item.y - CENTER_Y;
+      if (item.kind === 'billboard' || item.kind === 'neon-sign') {
         const pole = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 1.5, 30, 6), trunkMat);
         pole.position.set(x, 15, z);
         cityGroup.add(pole);
         buildingGeometries.push(pole.geometry);
-        const board = box(30, 14, 2, basic(prop.color), x, 36, z, cityGroup);
-        board.rotation.y = prop.angle;
+        const board = box(30, 14, 2, basic(item.color), x, 36, z, cityGroup);
+        board.rotation.y = item.angle;
         board.castShadow = false;
-      } else if (prop.kind === 'vendor') {
+      } else if (item.kind === 'vendor') {
         box(18, 8, 12, lambert('#6d4c41'), x, 4, z, cityGroup);
-        const awn = box(22, 2, 14, lambert(prop.color), x, 10, z, cityGroup);
-        awn.rotation.y = prop.angle;
-      } else if (prop.kind === 'bench') {
-        box(22, 2, 5, lambert(prop.color), x, 3, z, cityGroup);
-        box(22, 5, 2, lambert(prop.color), x, 6, z + 3, cityGroup);
-      } else if (prop.kind === 'hydrant') {
-        const body = new THREE.Mesh(new THREE.CylinderGeometry(3, 3.5, 8, 8), lambert(prop.color));
+        const awn = box(22, 2, 14, lambert(item.color), x, 10, z, cityGroup);
+        awn.rotation.y = item.angle;
+      } else if (item.kind === 'bench') {
+        box(22, 2, 5, lambert(item.color), x, 3, z, cityGroup);
+        box(22, 5, 2, lambert(item.color), x, 6, z + 3, cityGroup);
+      } else if (item.kind === 'hydrant') {
+        const body = new THREE.Mesh(new THREE.CylinderGeometry(3, 3.5, 8, 8), lambert(item.color));
         body.position.set(x, 4, z);
         body.castShadow = true;
         cityGroup.add(body);
         buildingGeometries.push(body.geometry);
-      } else if (prop.kind === 'planter') {
+      } else if (item.kind === 'planter') {
         const pot = new THREE.Mesh(new THREE.CylinderGeometry(7, 5, 6, 8), lambert('#8d5524'));
         pot.position.set(x, 3, z);
         cityGroup.add(pot);
@@ -402,27 +406,27 @@ export function createRenderer3d(canvas) {
         bush.castShadow = true;
         cityGroup.add(bush);
         buildingGeometries.push(bush.geometry);
-      } else if (prop.kind === 'lifeguard') {
+      } else if (item.kind === 'lifeguard') {
         for (const [dx, dz] of [[-5, -5], [5, -5], [-5, 5], [5, 5]]) {
           box(2, 16, 2, lambert('#8d5524'), x + dx, 8, z + dz, cityGroup);
         }
         box(16, 6, 12, lambert('#f8f9fa'), x, 19, z, cityGroup);
-        box(18, 2, 14, lambert(prop.color), x, 23, z, cityGroup);
-      } else if (prop.kind === 'crate') {
-        box(14, 10, 14, lambert(prop.color), x, 5, z, cityGroup);
-        box(10, 8, 10, lambert(prop.color), x + 2, 14, z - 2, cityGroup);
-      } else if (prop.kind === 'dockpost') {
+        box(18, 2, 14, lambert(item.color), x, 23, z, cityGroup);
+      } else if (item.kind === 'crate') {
+        box(14, 10, 14, lambert(item.color), x, 5, z, cityGroup);
+        box(10, 8, 10, lambert(item.color), x + 2, 14, z - 2, cityGroup);
+      } else if (item.kind === 'dockpost') {
         const post = new THREE.Mesh(new THREE.CylinderGeometry(2, 2, 8, 6), lambert('#3a3a3a'));
         post.position.set(x, 4, z);
         cityGroup.add(post);
         buildingGeometries.push(post.geometry);
-      } else if (prop.kind === 'picnic') {
-        box(24, 2, 10, lambert(prop.color), x, 4, z, cityGroup);
-        box(24, 2, 4, lambert(prop.color), x, 3, z - 8, cityGroup);
-        box(24, 2, 4, lambert(prop.color), x, 3, z + 8, cityGroup);
-      } else if (prop.kind === 'mailbox') {
+      } else if (item.kind === 'picnic') {
+        box(24, 2, 10, lambert(item.color), x, 4, z, cityGroup);
+        box(24, 2, 4, lambert(item.color), x, 3, z - 8, cityGroup);
+        box(24, 2, 4, lambert(item.color), x, 3, z + 8, cityGroup);
+      } else if (item.kind === 'mailbox') {
         box(2, 12, 2, lambert('#3a3a3a'), x, 6, z, cityGroup);
-        box(10, 8, 6, lambert(prop.color), x, 16, z, cityGroup);
+        box(10, 8, 6, lambert(item.color), x, 16, z, cityGroup);
       }
     }
 
@@ -447,6 +451,8 @@ export function createRenderer3d(canvas) {
   const pedMeshes = new Map();
   let playerMesh = null;
   let playerMeshShirt = null;
+  // The player mesh is rebuilt on a character switch, so it tracks which
+  // character it was built for and that character's height and build.
   let playerMeshChar = null;
   let playerMeshScale = 1;
   let playerMeshBuild = 1;
@@ -475,7 +481,7 @@ export function createRenderer3d(canvas) {
   dynamicGroup.add(raceMarker);
 
   // Crew-job start markers: one gold octahedron per job that can be
-  // started now (at most four); they float over their start points.
+  // started now (at most four); they float and spin over their start points.
   const crewMarkers = CREW_JOBS.map(() => {
     const m = new THREE.Mesh(markerGeo, basic('#ffb703'));
     m.position.y = 50;
@@ -564,7 +570,7 @@ export function createRenderer3d(canvas) {
     } else {
       // Cabin by body shape: a truck's cab sits ahead of its open bed,
       // a van's glass rides on its tall roof, a hatch is short with
-      // its cabin forward.
+      // its cabin pushed forward.
       if (car.kind === 'truck') {
         box(spec.length * 0.38, 8, spec.width * 0.78, glassMat, spec.length * 0.24, 15, 0, group);
         box(spec.length * 0.36, 2, spec.width * 0.8, lambert('#2b2b2b'), -spec.length * 0.3, 11, 0, group);
@@ -588,7 +594,7 @@ export function createRenderer3d(canvas) {
         }
       }
     }
-    // Police livery, from the car id: 0 = white doors, 1 = white side
+    // Patrol paint, from the car id: 0 = white doors, 1 = white side
     // stripe, 2 = white roof panel. Every cruiser reads differently.
     if (car.kind === 'police') {
       if (car.livery === 0) {
@@ -623,10 +629,11 @@ export function createRenderer3d(canvas) {
   }
 
   // A floating name tag for a named local: one small canvas per name,
-  // shared by every sprite that shows it.
+  // drawn once and shared by every sprite that shows it.
   const nameTexCache = new Map();
   function makeNameSprite(name) {
-    if (!nameTexCache.has(name)) {
+    let tex = nameTexCache.get(name);
+    if (!tex) {
       const c = document.createElement('canvas');
       c.width = 256;
       c.height = 56;
@@ -639,32 +646,18 @@ export function createRenderer3d(canvas) {
       g.strokeText(name, 128, 28);
       g.fillStyle = '#fff';
       g.fillText(name, 128, 28);
-      nameTexCache.set(name, new THREE.CanvasTexture(c));
+      tex = new THREE.CanvasTexture(c);
+      nameTexCache.set(name, tex);
     }
-    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: nameTexCache.get(name), transparent: true, depthWrite: false }));
+    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false }));
     sprite.scale.set(56, 12, 1);
     sprite.position.y = 44;
     return sprite;
   }
 
-  function buildPersonMesh(shirt, skin, kind, look) {
-    const group = new THREE.Group();
-    const v = look || {};
-    const torso = new THREE.Mesh(torsoGeo, lambert(shirt));
-    torso.position.y = 12;
-    torso.castShadow = true;
-    const legs = new THREE.Mesh(legsGeo, lambert(v.pants || '#3d405b'));
-    legs.position.y = 3;
-    legs.castShadow = true;
-    const head = new THREE.Mesh(headGeo, lambert(skin));
-    head.position.y = 24;
-    head.castShadow = true;
-    group.add(torso, legs, head);
-    // Hats: cops keep the dark cap, the player keeps the gold one (the
-    // marker), walkers wear theirs. The style varies, the colour marks
-    // the role.
-    const hatKind = v.hat || (kind === 'cop' || kind === 'player' ? 'cap' : 'none');
-    const hatColor = kind === 'cop' ? '#14213d' : kind === 'player' ? '#ffb703' : (v.hatColor || '#333');
+  /** Add a hat to a person mesh. Cops keep the dark cap, the player keeps
+   * the gold one (the marker); walkers wear their own style and colour. */
+  function addHat(group, hatKind, hatColor) {
     if (hatKind === 'cap') {
       const cap = new THREE.Mesh(capGeo, lambert(hatColor));
       cap.position.y = 28;
@@ -682,6 +675,25 @@ export function createRenderer3d(canvas) {
       dome.scale.set(1, 0.7, 1);
       group.add(brim, dome);
     }
+  }
+
+  function buildPersonMesh(shirt, skin, kind, look) {
+    const group = new THREE.Group();
+    const v = look || {};
+    const torso = new THREE.Mesh(torsoGeo, lambert(shirt));
+    torso.position.y = 12;
+    torso.castShadow = true;
+    const legs = new THREE.Mesh(legsGeo, lambert(v.pants || '#3d405b'));
+    legs.position.y = 3;
+    legs.castShadow = true;
+    const head = new THREE.Mesh(headGeo, lambert(skin));
+    head.position.y = 24;
+    head.castShadow = true;
+    group.add(torso, legs, head);
+    // The style varies, the colour marks the role.
+    const hatKind = v.hat || (kind === 'cop' || kind === 'player' ? 'cap' : 'none');
+    const hatColor = kind === 'cop' ? '#14213d' : kind === 'player' ? '#ffb703' : (v.hatColor || '#333');
+    addHat(group, hatKind, hatColor);
     // Height and build: the whole figure scales, so a tall broad local
     // and a short slim one read as different people at a glance.
     const s = v.scale ?? 1;
@@ -894,7 +906,8 @@ export function createRenderer3d(canvas) {
         group.rotation.set(0, -ped.angle, 0);
       }
       // A name tag only stands while its owner does.
-      if (group.userData.nameSprite) group.userData.nameSprite.visible = ped.down <= 0;
+      const tag = group.userData.nameSprite;
+      if (tag) tag.visible = ped.down <= 0;
     }
     for (const [ped, group] of pedMeshes) {
       if (!seenPeds.has(ped)) {
@@ -903,8 +916,8 @@ export function createRenderer3d(canvas) {
       }
     }
 
-    // The player mesh is rebuilt when the shirt changes (a character
-    // switch): the ring, aim line and car ring are built once only.
+    // The player mesh is rebuilt when the shirt changes or the character
+    // switches: the ring, aim line and car ring are built once only.
     const shirt = state.player.shirt || '#fb8500';
     if (!playerMesh || playerMeshShirt !== shirt || playerMeshChar !== state.character) {
       if (playerMesh) dynamicGroup.remove(playerMesh);
@@ -936,7 +949,10 @@ export function createRenderer3d(canvas) {
       const bob = Math.sin(player.walkPhase || 0) * 1.5;
       playerMesh.position.set(player.x - CENTER_X, (player.z || 0) + bob * 0.3, player.y - CENTER_Y);
       playerMesh.rotation.y = -player.angle;
-      playerMesh.scale.set(playerMeshScale * playerMeshBuild, playerMeshScale * (player.cover ? 0.62 : 1), playerMeshScale * playerMeshBuild);
+      // Height and build scale the figure; cover crouches it (the Y
+      // scale drops), a jump lifts it. X and Z scale by height × build.
+      const sy = playerMeshScale * (player.cover ? 0.62 : 1);
+      playerMesh.scale.set(playerMeshScale * playerMeshBuild, sy, playerMeshScale * playerMeshBuild);
       playerRing.position.set(player.x - CENTER_X, 1, player.y - CENTER_Y);
       aimLine.position.set(player.x + Math.cos(player.angle) * 14 - CENTER_X, 2, player.y + Math.sin(player.angle) * 14 - CENTER_Y);
       aimLine.rotation.y = -player.angle;
@@ -966,6 +982,8 @@ export function createRenderer3d(canvas) {
       raceMarker.rotation.y = state.time * 1.5;
     }
 
+    // Crew-job markers: one per startable job, floating and spinning over
+    // its start point; the extras hide when fewer jobs are open.
     const crewStarts = crewJobStartPoints(state);
     crewMarkers.forEach((m, i) => {
       m.visible = i < crewStarts.length;

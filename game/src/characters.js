@@ -78,6 +78,9 @@ export function loadRecordToLive(state, id) {
   p.stamina = rec.stamina ?? 100;
   p.shirt = def.shirt;
   p.skin = def.skin;
+  // The crew's silhouette travels with the switch: trousers, hat, height
+  // and build all come from the character definition, so Lena, Ivy and
+  // Marco each read as a different person at a glance (defaults are Lena's).
   p.pants = def.pants ?? '#1d3557';
   p.hat = def.hat ?? 'cap';
   p.scale = def.scale ?? 1;

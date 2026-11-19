@@ -4,19 +4,19 @@
 // Collision is circle-versus-building-footprint, checked block by block.
 import { PALETTE, WORLD } from './config.js';
 
-/** The river: a north-south channel through column 6 (between the 1760
- * and 2080 roads), flowing into the bay. Roads cross it on bridges
- * (painted over it); off-road it is water. Wide enough (112u) to read
- * as a river on the map and in 3D, not a canal. */
+/** The river: a north-south channel through column 6, between the 1760
+ * and 2080 roads, running down into the bay. Every road crosses it on
+ * a bridge; off the road it is water. At 112u wide it reads as a river
+ * on the map and in 3D, not a canal. */
 export const RIVER = { x0: 1864, x1: 1976 };
 
-/** The landmark bridge: the Coral Boulevard (y=800) crossing, the one
- * the cover chase drives over. Standard bridges are narrower decks;
- * the landmark is a wider gold deck with bowed edges, rails and posts. */
+/** The landmark crossing: Coral Boulevard (y=800), the bridge the cover
+ * chase drives over. Ordinary bridges are plain concrete decks; the
+ * landmark is a wider gold deck with bowed edges, white rails and posts. */
 export const LANDMARK_BRIDGE_Y = 800;
 export const BRIDGE_DECK = { standard: 46, landmark: 62, overhang: 14, landmarkOverhang: 22 };
 
-/** Every horizontal road crosses the river on a bridge. */
+/** One crossing per horizontal road — every road over the river is a bridge. */
 export function bridgeCrossings(city) {
   return city.ys.map((y) => ({ y, landmark: y === LANDMARK_BRIDGE_Y }));
 }
@@ -52,9 +52,10 @@ function districtFor(col, row, cols) {
   return 'uptown';
 }
 
-/** Deterministic [0,1) from integers — picks building forms without
- * consuming the seeded stream, so tapes, cash drops and every other
- * downstream draw stay exactly where they were. */
+/** A deterministic [0,1) drawn from three integers. Building shapes are
+ * picked from this, never from the seeded rng, so the tapes, the cash
+ * drops and every draw after them land in exactly the same places as
+ * before. */
 function hash3(a, b, c) {
   let h = (Math.imul(a, 73856093) ^ Math.imul(b, 19349663) ^ Math.imul(c, 83492791)) >>> 0;
   h = Math.imul(h ^ (h >>> 13), 0x5bd1e995);
@@ -62,14 +63,14 @@ function hash3(a, b, c) {
   return h / 4294967296;
 }
 
-/** Vary one building's shape without touching the rng stream. The base
- * footprint (x, y, w, h) never changes, so collision, cover and the map
- * keep working off the same rects. Upper tiers sit strictly inside the
- * base, and an L arm stays inside the building's own cell, so nothing
- * can overlap a neighbour or stick out of its block. Roof details sit
- * on the topmost face. Forms: slab (plain box), stepped (wide base +
- * narrower upper tier), podium (low wide base + slim tall tower),
- * L (base + a wing on one side). */
+/** Give one building a varied shape, without spending any rng. The base
+ * footprint (x, y, w, h) is sacred — collision, cover and the map all
+ * keep using it. An upper tier is always strictly inside the base, and
+ * an L wing always stays inside the building's own cell, so nothing can
+ * overlap a neighbour or poke out of its block. A roof detail sits on
+ * the highest face. The four forms: slab (plain box), stepped (broad
+ * base + a narrower storey on top), podium (low broad base + a slim
+ * tall tower), L (the base plus a wing on one side). */
 function varyBuilding(b, col, row, i, cx, cy, cellW, cellH) {
   const h1 = hash3(col, row, i);
   const h2 = hash3(col + 11, row + 11, i);
@@ -85,40 +86,41 @@ function varyBuilding(b, col, row, i, cx, cy, cellW, cellH) {
   else form = h1 < 0.3 ? 'stepped' : h1 < 0.5 ? 'podium' : h1 < 0.75 ? 'L' : 'slab';
   b.form = form;
   if (form === 'stepped' || form === 'podium') {
-    const stepped = form === 'stepped';
-    const uwFrac = stepped ? 0.55 + h3 * 0.2 : 0.38 + h3 * 0.12;
-    const uhFrac = stepped ? 0.55 + h2 * 0.2 : 0.38 + h2 * 0.12;
-    const upH = b.height * (stepped ? 0.35 + h4 * 0.15 : 0.6 + h4 * 0.15);
-    const uw = b.w * uwFrac;
-    const uh = b.h * uhFrac;
+    const isStepped = form === 'stepped';
+    const wFrac = isStepped ? 0.55 + h3 * 0.2 : 0.38 + h3 * 0.12;
+    const dFrac = isStepped ? 0.55 + h2 * 0.2 : 0.38 + h2 * 0.12;
+    const topH = b.height * (isStepped ? 0.35 + h4 * 0.15 : 0.6 + h4 * 0.15);
+    const uw = b.w * wFrac;
+    const uh = b.h * dFrac;
     const dx = (b.w - uw) * (0.2 + h2 * 0.6);
     const dy = (b.h - uh) * (0.2 + h4 * 0.6);
-    b.upper = { x: b.x + dx, y: b.y + dy, w: uw, h: uh, height: upH };
+    b.upper = { x: b.x + dx, y: b.y + dy, w: uw, h: uh, height: topH };
   }
   if (form === 'L') {
     const side = Math.floor(h2 * 4); // 0 east, 1 west, 2 south, 3 north
     const along = 0.45 + h3 * 0.3;
     const edge = h4 < 0.5 ? 0 : 1;
-    const aH = b.height * (0.7 + h4 * 0.3);
+    const wingH = b.height * (0.7 + h4 * 0.3);
     if (side === 0) {
       const aw = cx + cellW - (b.x + b.w);
       const ah = b.h * along;
-      b.arm = { x: b.x + b.w, y: b.y + (b.h - ah) * edge, w: aw, h: ah, height: aH };
+      b.arm = { x: b.x + b.w, y: b.y + (b.h - ah) * edge, w: aw, h: ah, height: wingH };
     } else if (side === 1) {
       const aw = b.x - cx;
       const ah = b.h * along;
-      b.arm = { x: cx, y: b.y + (b.h - ah) * edge, w: aw, h: ah, height: aH };
+      b.arm = { x: cx, y: b.y + (b.h - ah) * edge, w: aw, h: ah, height: wingH };
     } else if (side === 2) {
       const ah = cy + cellH - (b.y + b.h);
       const aw = b.w * along;
-      b.arm = { x: b.x + (b.w - aw) * edge, y: b.y + b.h, w: aw, h: ah, height: aH };
+      b.arm = { x: b.x + (b.w - aw) * edge, y: b.y + b.h, w: aw, h: ah, height: wingH };
     } else {
       const ah = b.y - cy;
       const aw = b.w * along;
-      b.arm = { x: b.x + (b.w - aw) * edge, y: cy, w: aw, h: ah, height: aH };
+      b.arm = { x: b.x + (b.w - aw) * edge, y: cy, w: aw, h: ah, height: wingH };
     }
   }
-  // Rooftop detail on the topmost face (upper tier if any, else the base).
+  // A rooftop feature on the highest face (the upper tier when there is
+  // one, otherwise the base roof).
   const kinds = b.district === 'downtown' ? ['antenna', 'helipad', 'watertower']
     : b.district === 'neon' ? ['ac', 'garden', 'antenna']
     : b.district === 'beachfront' ? ['garden', 'ac']
@@ -162,8 +164,11 @@ export function buildCity(rng) {
         continue;
       }
       if (district === 'marina') {
-        boats.push({ x: bx + bw * 0.3, y: by + bh * 0.5, angle: 0.4, variant: hash3(col, row, 1) < 0.5 ? 'skiff' : 'speedboat' });
-        boats.push({ x: bx + bw * 0.7, y: by + bh * 0.3, angle: -0.3, variant: hash3(col, row, 2) < 0.5 ? 'skiff' : 'speedboat' });
+        // Decorative moored boats: skiff or speedboat by position hash,
+        // so no rng is consumed and the marina reads differently per block.
+        const pickBoat = (seed) => (hash3(col, row, seed) < 0.5 ? 'skiff' : 'speedboat');
+        boats.push({ x: bx + bw * 0.3, y: by + bh * 0.5, angle: 0.4, variant: pickBoat(1) });
+        boats.push({ x: bx + bw * 0.7, y: by + bh * 0.3, angle: -0.3, variant: pickBoat(2) });
         continue;
       }
       const count = district === 'downtown' ? 1 : rng.int(2, 5);
@@ -188,9 +193,9 @@ export function buildCity(rng) {
           sign: district === 'neon' ? rng.pick(['#ff5d8f', '#00f5d4', '#fee440', '#9b5de5']) : null,
           district,
         };
-        // Shape variety only: no rng is consumed here, so the stream —
-        // and every tape, cash drop and staged scene after it — is
-        // byte-identical to the v5 build.
+        // Shape variety, and nothing else: this call spends no rng, so
+        // the stream — and every tape, cash drop and staged scene after
+        // it — is byte-identical to the build before it.
         varyBuilding(building, col, row, i, cx, cy, cellW, cellH);
         block.buildings.push(building);
         buildings.push(building);
@@ -227,8 +232,8 @@ export function buildCity(rng) {
 
   // No building may stand in the river: drop any footprint the channel
   // cuts. Filtering after generation keeps the seeded stream identical,
-  // so only column 6 changes. An L arm that the channel cuts is dropped
-  // on its own — the base stays.
+  // so only column 6 changes. When the channel cuts an L wing, only the
+  // wing goes — the base stays put.
   const baseClear = (b) => b.x + b.w < RIVER.x0 || b.x > RIVER.x1;
   const armClear = (b) => !b.arm || (b.arm.x + b.arm.w < RIVER.x0 || b.arm.x > RIVER.x1);
   for (const block of blocks) {
@@ -237,28 +242,28 @@ export function buildCity(rng) {
   }
 
   // Two skiffs moored in the river itself (decorative city.boats only —
-  // the drivable boats are separate cars in the bay, so the 39-car and
-  // 2-boat counts are untouched). Angles point them along the channel.
+  // the drivable boats are separate cars out in the bay, so the 39-car
+  // and 2-boat counts are untouched). They point along the channel.
   boats.push({ x: 1920, y: 620, angle: Math.PI / 2, variant: 'skiff' });
   boats.push({ x: 1920, y: 1480, angle: Math.PI / 2, variant: 'skiff' });
 
   // Street props: benches, vendors, billboards, hydrants, lifeguard
-  // towers, crates — one or two per block, picked from a position hash,
-  // so ZERO rng is consumed and the stream (tapes, cash drops, staged
-  // scenes) stays byte-identical to the v8 build. Props sit on the
-  // sidewalk band at block corners, never on a road, never inside a
-  // building footprint or L arm, never in the river: they are
+  // towers, crates — nought, one or two per block, picked from a
+  // position hash, so ZERO rng is consumed and the stream (tapes, cash
+  // drops, staged scenes) stays byte-identical to the v8 build. Props
+  // sit on the sidewalk band at block corners, never on a road, never
+  // inside a building footprint or L arm, never in the river: they are
   // decoration, not collision. Kinds differ by district, so each
   // district reads differently at street level.
   const props = [];
-  const PROP_KINDS = {
+  const DISTRICT_PROPS = {
     downtown: ['billboard', 'bench', 'planter'],
     neon: ['neon-sign', 'vendor', 'bench'],
     beachfront: ['lifeguard', 'bench', 'planter'],
     marina: ['crate', 'dockpost', 'vendor'],
     uptown: ['bench', 'hydrant', 'planter', 'mailbox'],
   };
-  const PROP_COLORS = {
+  const PROP_PAINTS = {
     billboard: ['#e63946', '#4361ee', '#ffb703'],
     'neon-sign': ['#ff5d8f', '#00f5d4', '#fee440', '#9b5de5'],
     vendor: ['#ff5d8f', '#ffb703', '#2a9d8f'],
@@ -277,17 +282,17 @@ export function buildCity(rng) {
       props.push({ kind: 'picnic', x: block.x + block.w - 10, y: block.y + block.h - 10, color: '#8d5524', angle: 0 });
       continue;
     }
-    const kinds = PROP_KINDS[block.district] || PROP_KINDS.uptown;
-    const roll = hash3(block.x, block.y, 7);
-    const n = roll < 0.3 ? 0 : roll < 0.8 ? 1 : 2;
-    for (let k = 0; k < n; k += 1) {
-      const corner = Math.floor(hash3(block.x, block.y, 9 + k) * 4);
-      const x = corner % 2 === 0 ? block.x + 8 : block.x + block.w - 8;
-      const y = corner < 2 ? block.y + 8 : block.y + block.h - 8;
+    const menu = DISTRICT_PROPS[block.district] || DISTRICT_PROPS.uptown;
+    const density = hash3(block.x, block.y, 7);
+    const count = density < 0.3 ? 0 : density < 0.8 ? 1 : 2;
+    for (let k = 0; k < count; k += 1) {
+      const slot = Math.floor(hash3(block.x, block.y, 9 + k) * 4);
+      const x = slot % 2 === 0 ? block.x + 8 : block.x + block.w - 8;
+      const y = slot < 2 ? block.y + 8 : block.y + block.h - 8;
       if (x >= RIVER.x0 - 8 && x <= RIVER.x1 + 8 && y < WORLD.beachY) continue;
-      const kind = kinds[Math.floor(hash3(block.x, block.y, 20 + k) * kinds.length)];
-      const colors = PROP_COLORS[kind];
-      props.push({ kind, x, y, color: colors[Math.floor(hash3(block.x, block.y, 30 + k) * colors.length)], angle: hash3(block.x, block.y, 40 + k) * Math.PI });
+      const kind = menu[Math.floor(hash3(block.x, block.y, 20 + k) * menu.length)];
+      const palette = PROP_PAINTS[kind];
+      props.push({ kind, x, y, color: palette[Math.floor(hash3(block.x, block.y, 30 + k) * palette.length)], angle: hash3(block.x, block.y, 40 + k) * Math.PI });
     }
   }
 
@@ -322,7 +327,7 @@ export function buildCity(rng) {
 }
 
 /** True when the point sits inside any building footprint — the base
- * rect, or an L arm. */
+ * rectangle, or one of its L wings. */
 export function pointInBuilding(city, x, y) {
   for (const b of city.buildings) {
     if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) return true;
@@ -373,9 +378,9 @@ export function dryPoint(city, x, y) {
   return [nx, ny];
 }
 
-/** Push a circle out of every building footprint it overlaps — base
- * rects first, then their L arms, so a push out of a base can never
- * leave the circle inside the arm. Returns [x, y]. */
+/** Push a circle out of every building footprint it overlaps. Base
+ * rectangles go first, then their L wings, so a push out of a base can
+ * never leave the circle sitting inside the wing. Returns [x, y]. */
 export function resolveBuildingCollision(city, x, y, radius) {
   let px = x;
   let py = y;

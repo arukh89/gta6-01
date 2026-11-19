@@ -31,6 +31,8 @@ export function createPlayer(spawn) {
     // colours after a switch (the renderers read these, not a hardcode).
     shirt: '#fb8500',
     skin: '#c68642',
+    // Lena's silhouette by default: dark trousers, a cap, average height
+    // and build. A character switch overwrites all four (see characters.js).
     pants: '#1d3557',
     hat: 'cap',
     scale: 1.0,
@@ -73,10 +75,10 @@ export function createCar(type, x, y, angle, driver) {
     // Damage taken while already wrecked; past 40 the car explodes.
     wreckDamage: 0,
     exploded: false,
-    // Police livery: three patrol paint jobs, from the car id alone —
-    // no rng, so the stream is untouched and every cruiser reads
-    // differently. Boats keep kind 'boat' (missions check it) and
-    // vary by variant instead: 'skiff' or 'speedboat'.
+    // Patrol paint, from the car id alone: three liveries, no rng, so
+    // the stream is untouched and every cruiser reads differently.
+    // Boats keep kind 'boat' (missions check it) and vary by variant
+    // instead: 'skiff' or 'speedboat'.
     livery: type === 'police' ? id % 3 : 0,
     variant: type === 'boat' ? 'skiff' : null,
   };

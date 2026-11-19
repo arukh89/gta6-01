@@ -5,7 +5,8 @@
 // cheap: only rewritten when the value shown actually changes.
 import { HEALTH, PALETTE, VEHICLES, WEAPONS, WORLD, characterById, repTitle, skillLevel } from './config.js';
 import { BRIDGE_DECK, RIVER, bridgeCrossings, districtNameAt, waterYAt } from './world.js';
-import { CREW_JOBS, MISSION_COUNT, RACE, crewJobStartPoints, missionList, missionMarker, objectiveText } from './missions.js';
+import { MISSION_COUNT, RACE, missionList, missionMarker, objectiveText } from './missions.js';
+import { CREW_JOBS, crewJobStartPoints } from './missions.js';
 import { playerCar } from './player.js';
 
 function el(id) {
@@ -92,9 +93,10 @@ export function createHud() {
     ctx.stroke();
   }
 
-  // The river, drawn the same way on the full map and the minimap (before
-  // the roads, so crossings read as bridges). Sandy banks, deeper water
-  // than the bay, a bright centre flow and a white current line.
+  // The river, painted the same way on the full map and the minimap
+  // (before the roads, so crossings read as bridges). Sandy banks,
+  // deeper water than the bay, a bright centre flow and a white
+  // current line.
   function drawRiver(ctx, sx, sy) {
     const top = 24 * sy;
     const bottom = (waterYAt(1920) + 30) * sy;
@@ -111,10 +113,10 @@ export function createHud() {
     ctx.fillRect(cx - Math.max(0.5, sx), top, Math.max(1, 2 * sx), len);
   }
 
-  // Bridges over the river, drawn the same way on the full map and the
+  // Bridges over the river, painted the same way on the full map and the
   // minimap (after the roads, so the decks sit on top): a deck wider than
   // the road with white rails; the landmark (Coral Boulevard) is a wider
-  // gold deck with bowed edges. `detail` adds rail posts (full map only).
+  // gold deck with bowed edges. `detail` adds the rail posts (full map).
   function drawBridges(ctx, city, sx, sy, detail) {
     const bow = 20; // control-point offset; the edge bulges bow/2 at mid-river
     for (const { y, landmark } of bridgeCrossings(city)) {
@@ -190,6 +192,7 @@ export function createHud() {
     ctx.fillStyle = 'rgba(255,255,255,0.6)';
     for (const b of city.buildings) {
       ctx.fillRect(b.x * sx, b.y * sy, Math.max(1, b.w * sx), Math.max(1, b.h * sy));
+      // An L wing reads on the minimap too, so the footprint matches the city.
       if (b.arm) ctx.fillRect(b.arm.x * sx, b.arm.y * sy, Math.max(1, b.arm.w * sx), Math.max(1, b.arm.h * sy));
     }
     return c;
@@ -254,9 +257,11 @@ export function createHud() {
       mapCtx.lineWidth = 1;
       mapCtx.strokeRect(RACE.start.x * sx - 4, RACE.start.y * sy - 4, 8, 8);
     }
-    // Crew-job starts: gold squares on the minimap, like the race start.
+    // Crew-job starts: gold squares on the minimap, drawn like the race
+    // start so a player can spot the next job at a glance.
+    const gold = '#ffb703';
     for (const p of crewJobStartPoints(state)) {
-      mapCtx.fillStyle = '#ffb703';
+      mapCtx.fillStyle = gold;
       mapCtx.fillRect(p.x * sx - 4, p.y * sy - 4, 8, 8);
       mapCtx.strokeStyle = '#fff';
       mapCtx.lineWidth = 1;
@@ -399,6 +404,7 @@ export function createHud() {
       ctx.fillStyle = 'rgba(255,255,255,0.75)';
       for (const b of state.city.buildings) {
         ctx.fillRect(b.x * s, b.y * s, Math.max(1, b.w * s), Math.max(1, b.h * s));
+        // An L wing reads on the full map too, so the footprint matches the city.
         if (b.arm) ctx.fillRect(b.arm.x * s, b.arm.y * s, Math.max(1, b.arm.w * s), Math.max(1, b.arm.h * s));
       }
       ctx.fillStyle = 'rgba(255,255,255,0.92)';
@@ -434,7 +440,7 @@ export function createHud() {
         ctx.restore();
       }
       // The landmark bridge, named on the map so it reads as the feature
-      // it is — the gold deck the cover chase drives over.
+      // it is: the gold deck the cover chase drives over.
       ctx.textAlign = 'center';
       roadName('CORAL BRIDGE', 1920 * s, 720 * s);
       const dot = (x, y, color, r) => {
@@ -496,7 +502,10 @@ export function createHud() {
         const replay = done ? ` <button type="button" data-replay="${i}">↻ Replay</button>` : '';
         html += `<div class="${cls}">${mark} ${i + 1}. ${job.title} — $${job.reward}${medal}${replay}</div>`;
       });
-      html += `<hr><div><b>CREW JOBS</b>${state.progress.safehouse ? '' : ' — UNLOCK AFTER 3 STORY JOBS'}</div>`;
+      // The crew board: four jobs, each tagged with the crew member who
+      // runs it. Locked until the safehouse (three story jobs done).
+      const lockNote = state.progress.safehouse ? '' : ' — UNLOCK AFTER 3 STORY JOBS';
+      html += `<hr><div><b>CREW JOBS</b>${lockNote}</div>`;
       CREW_JOBS.forEach((job, i) => {
         const done = state.crewJob.done.includes(i);
         const active = state.crewJob.active && state.crewJob.index === i;

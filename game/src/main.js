@@ -16,7 +16,8 @@ import { applyBustedPenalty, applyWastedPenalty, findCover, nearestCar, playerCa
 import { reloadWeapon } from './combat.js';
 import { crimeWanted } from './police.js';
 import { spawnMuzzle, spawnSparks } from './effects.js';
-import { RACE, availableMissions, createRaceState, crewJobArrested, currentMission, missionList, replayMission, skipCurrentMission, startCurrentMission } from './missions.js';
+import { RACE, availableMissions, createRaceState, currentMission, missionList, replayMission, skipCurrentMission, startCurrentMission } from './missions.js';
+import { crewJobArrested } from './missions.js';
 import { SELL_VALUES, SHOP_ITEMS, buyItem, eatSnack, sellCar, shopItemState } from './shops.js';
 import { createMinigameState, quitMinigame, startDarts, startRange } from './minigames.js';
 import { applySave, hasSave, readSave, writeSave } from './save.js';
@@ -212,7 +213,8 @@ function endRun(kind) {
   state.roadblock = false;
   state.race = createRaceState();
   state.minigame = createMinigameState();
-  // Busted or wasted blows an active crew job too — no checkpoint retry.
+  // Busted or wasted blows an active crew job too: the target car is
+  // pulled and the job is gone, with no checkpoint retry (see missions.js).
   crewJobArrested(state);
   screenRef.current = 'over';
   showOnly('over');
@@ -607,7 +609,8 @@ function runGame() {
     if (actions & ACT.PAUSE) {
       if (screenRef.current === 'play') {
         screenRef.current = 'paused';
-        document.getElementById('pause-stats').textContent = `${characterById(state.character).name} · $${state.player.money} · ${state.stats.missionsDone}/9 jobs · ${state.stats.crewDone || 0}/4 crew jobs · ${state.stats.taxisDone} fares · ${state.stats.carsStolen} cars borrowed · ${state.stats.racesWon} races won · REP ${state.progress.rep} ${repTitle(state.progress.rep)} · DRV Lv ${skillLevel(state.progress.driving, 'driving')} · SHT Lv ${skillLevel(state.progress.shooting, 'shooting')} · STA Lv ${skillLevel(state.progress.stamina, 'stamina')}`;
+        const crewPart = `${state.stats.crewDone || 0}/4 crew jobs`;
+        document.getElementById('pause-stats').textContent = `${characterById(state.character).name} · $${state.player.money} · ${state.stats.missionsDone}/9 jobs · ${crewPart} · ${state.stats.taxisDone} fares · ${state.stats.carsStolen} cars borrowed · ${state.stats.racesWon} races won · REP ${state.progress.rep} ${repTitle(state.progress.rep)} · DRV Lv ${skillLevel(state.progress.driving, 'driving')} · SHT Lv ${skillLevel(state.progress.shooting, 'shooting')} · STA Lv ${skillLevel(state.progress.stamina, 'stamina')}`;
         showOnly('pause');
       } else if (screenRef.current === 'paused') {
         screenRef.current = 'play';
@@ -714,7 +717,10 @@ function runGame() {
           break;
         }
       }
-      if (state.mission.briefPending && !state.mission.done && screenRef.current === 'play' && !(state.crewJob && state.crewJob.active)) showBrief();
+      // A story brief never pops while a crew job is running — the crew
+      // objective owns the HUD until the job ends.
+      const crewRunning = state.crewJob && state.crewJob.active;
+      if (state.mission.briefPending && !state.mission.done && screenRef.current === 'play' && !crewRunning) showBrief();
       const car = playerCar(state);
       audio.update(STEP, car ? car.speed : 0, state.wanted.level > 0, state.time);
       hud.update(state, computePrompt(), audio.stationLabel());

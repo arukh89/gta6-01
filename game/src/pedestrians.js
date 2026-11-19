@@ -13,12 +13,18 @@ const HATS = ['none', 'cap', 'beanie', 'wide'];
 const HAT_COLORS = ['#14213d', '#e63946', '#ffb703', '#2a9d8f', '#6c757d', '#f4d35e'];
 const COP_SHIRTS = ['#1d3557', '#1b2f4b', '#243a5e', '#16233a'];
 
-/** Deterministic 0..1 hash — a look derived from an index alone, so no
- * seeded-rng call is consumed and tape positions (and everything the
- * stream feeds downstream) stay exactly where they were. */
+/** Deterministic 0..1 hash of a number. A person's look is derived from
+ * an index alone through this — no seeded-rng call is consumed, so the
+ * tapes, the cash drops and everything the stream feeds downstream stay
+ * exactly where they were. */
 function hash01(n) {
   const x = Math.sin(n * 127.1) * 43758.5453;
   return x - Math.floor(x);
+}
+
+/** Pick one entry from a list by a 0..1 hash (same as floor(h * len)). */
+function pickFrom(list, h) {
+  return list[Math.floor(h * list.length)];
 }
 
 /** One person's look from an index alone: height, build, hat, trousers
@@ -27,17 +33,17 @@ export function pedLookForIndex(i) {
   return {
     scale: 0.88 + hash01(i * 1.7 + 0.3) * 0.24,
     build: 0.85 + hash01(i * 2.3 + 1.1) * 0.35,
-    hat: HATS[Math.floor(hash01(i * 3.1 + 2.7) * HATS.length)],
-    hatColor: HAT_COLORS[Math.floor(hash01(i * 4.7 + 0.9) * HAT_COLORS.length)],
-    pants: PANTS[Math.floor(hash01(i * 5.3 + 4.2) * PANTS.length)],
+    hat: pickFrom(HATS, hash01(i * 3.1 + 2.7)),
+    hatColor: pickFrom(HAT_COLORS, hash01(i * 4.7 + 0.9)),
+    pants: pickFrom(PANTS, hash01(i * 5.3 + 4.2)),
     stride: 0.7 + hash01(i * 6.9 + 3.3) * 0.7,
   };
 }
 
-/** Named ambient locals: five of the forty strollers, given a name, a
- * role and a home spot. They walk a normal block perimeter near their
- * spot and behave exactly like any other ped (same HP, same rules) —
- * they are ambience, not missions. */
+/** Named ambient locals: five of the strollers, given a name, a role and
+ * a home spot. They walk a normal block perimeter near their spot and
+ * behave exactly like any other ped (same HP, same rules) — they are
+ * ambience, not missions. */
 const NAMED_NPCS = [
   { name: 'Sari', role: 'Street-food vendor', spot: { x: 1030, y: 1410 }, look: { hat: 'wide', hatColor: '#f4d35e', shirt: '#e63946', pants: '#3d405b', scale: 0.98, build: 1.05 } },
   { name: 'Budi', role: 'Taxi driver', spot: { x: 2080, y: 800 }, look: { hat: 'cap', hatColor: '#14213d', shirt: '#8ecae6', pants: '#212529', scale: 1.0, build: 0.95 } },
@@ -46,14 +52,11 @@ const NAMED_NPCS = [
   { name: 'Maya', role: 'Lifeguard', spot: { x: 1600, y: 2120 }, look: { hat: 'cap', hatColor: '#e63946', shirt: '#ffb703', pants: '#e63946', scale: 0.96, build: 0.9 } },
 ];
 
+/** The walkable block whose centre is nearest a point (for placing a
+ * named local near their home spot). */
 function nearestWalkableBlock(walkable, x, y) {
-  let best = walkable[0];
-  let bestD = Infinity;
-  for (const b of walkable) {
-    const d = Math.hypot(b.x + b.w / 2 - x, b.y + b.h / 2 - y);
-    if (d < bestD) { bestD = d; best = b; }
-  }
-  return best;
+  const dist = (b) => Math.hypot(b.x + b.w / 2 - x, b.y + b.h / 2 - y);
+  return walkable.reduce((best, b) => (dist(b) < dist(best) ? b : best), walkable[0]);
 }
 
 export function createPedestrians(city, rng, count) {
@@ -63,6 +66,9 @@ export function createPedestrians(city, rng, count) {
   const walkable = city.blocks.filter((b) => !b.park && b.district !== 'marina' && !(b.x < RIVER.x1 && b.x + b.w > RIVER.x0));
   for (let i = 0; i < count; i += 1) {
     const block = rng.pick(walkable);
+    // Walkers move at a wider spread than before (32–70 instead of a
+    // narrow band), and each one gets a hashed look — height, build, hat,
+    // trousers, cadence — without touching the rng stream.
     const ped = {
       kind: 'ped',
       block,
@@ -82,8 +88,8 @@ export function createPedestrians(city, rng, count) {
       fare: false,
       ...pedLookForIndex(i),
     };
-    // Five of the strollers are named locals with a home spot: the
-    // same rng calls still happen above, so the stream is untouched.
+    // Five of the strollers are named locals with a home spot. The rng
+    // calls above still happen in the same order, so the stream is untouched.
     if (i < NAMED_NPCS.length) {
       const named = NAMED_NPCS[i];
       ped.name = named.name;
@@ -116,6 +122,8 @@ export function createPedestrians(city, rng, count) {
       phase: rng.range(0, 6),
       fare: false,
       beach: true,
+      // Beachgoers hash from a different index band (100+) so no two
+      // people share a look by accident.
       ...pedLookForIndex(i + 100),
     });
   }
@@ -124,9 +132,11 @@ export function createPedestrians(city, rng, count) {
 
 export function createOfficer(x, y) {
   // Officers vary like walkers — height, build, uniform shade, cadence —
-  // derived from where they spawn, so the dark cap still reads as police.
-  const v = hash01(Math.floor(x) * 0.13 + Math.floor(y) * 0.29);
-  const v2 = hash01(Math.floor(x) * 0.31 + Math.floor(y) * 0.17);
+  // all hashed from where they spawn, so the dark cap still reads as police.
+  const fx = Math.floor(x);
+  const fy = Math.floor(y);
+  const shade = hash01(fx * 0.13 + fy * 0.29);
+  const tall = hash01(fx * 0.31 + fy * 0.17);
   return {
     kind: 'cop',
     block: null,
@@ -136,23 +146,24 @@ export function createOfficer(x, y) {
     x,
     y,
     angle: 0,
-    shirt: COP_SHIRTS[Math.floor(v * COP_SHIRTS.length)],
+    shirt: pickFrom(COP_SHIRTS, shade),
     skin: '#f2c89b',
     panic: 0,
     down: 0,
     phase: 0,
     fare: false,
-    scale: 0.94 + v2 * 0.16,
-    build: 0.9 + hash01(Math.floor(x) * 0.07 + Math.floor(y) * 0.43) * 0.3,
+    scale: 0.94 + tall * 0.16,
+    build: 0.9 + hash01(fx * 0.07 + fy * 0.43) * 0.3,
     hat: 'cap',
     hatColor: '#14213d',
     pants: '#14213d',
-    stride: 0.9 + hash01(Math.floor(x) * 0.53 + Math.floor(y) * 0.11) * 0.3,
+    stride: 0.9 + hash01(fx * 0.53 + fy * 0.11) * 0.3,
   };
 }
 
 /** A SWAT officer: faster, tougher (recovers from a knockdown in a
- * second), and hits harder. Dark gear, same shape as a regular officer. */
+ * second), and hits harder. Dark gear, same shape as a regular officer —
+ * just a touch taller and broader, so they read as the heavy unit. */
 export function createSwatOfficer(x, y) {
   const officer = createOfficer(x, y);
   officer.swat = true;
@@ -190,6 +201,13 @@ export function panicNearby(state, x, y, radius) {
   }
 }
 
+/** Advance a walker's animation clock. Cadence (stride) stretches or
+ * compresses it, so a loping tall walker and a quick short one don't
+ * step in lockstep. */
+function stepPhase(ped, dt, rate) {
+  ped.phase += dt * rate * (ped.stride ?? 1);
+}
+
 export function updatePedestrians(state, dt, events) {
   const player = state.player;
   for (const ped of state.peds) {
@@ -211,7 +229,7 @@ export function updatePedestrians(state, dt, events) {
       const [dx, dy] = dryPoint(state.city, nx, ny);
       ped.x = dx;
       ped.y = dy;
-      ped.phase += dt * 12 * (ped.stride ?? 1);
+      stepPhase(ped, dt, 12);
       continue;
     }
     if (ped.kind === 'cop') {
@@ -222,7 +240,7 @@ export function updatePedestrians(state, dt, events) {
         const [dx, dy] = dryPoint(state.city, nx, ny);
         ped.x = dx;
         ped.y = dy;
-        ped.phase += dt * 10 * (ped.stride ?? 1);
+        stepPhase(ped, dt, 10);
         if (d < 30 && player.onFoot) {
           events.push({ type: 'cop-touch' });
         }
@@ -237,7 +255,7 @@ export function updatePedestrians(state, dt, events) {
       const [dx, dy] = dryPoint(state.city, nx, ny);
       ped.x = dx;
       ped.y = dy;
-      ped.phase += dt * 12 * (ped.stride ?? 1);
+      stepPhase(ped, dt, 12);
       continue;
     }
     if (ped.beach) {
@@ -245,7 +263,7 @@ export function updatePedestrians(state, dt, events) {
       ped.y += Math.sin(ped.angle) * ped.speed * 0.4 * dt;
       if (ped.x < 80 || ped.x > 3120) ped.angle = Math.PI - ped.angle;
       if (ped.y < 2000 || ped.y > waterYAt(ped.x) - 14) ped.angle = -ped.angle;
-      ped.phase += dt * 7 * (ped.stride ?? 1);
+      stepPhase(ped, dt, 7);
       continue;
     }
     if (!ped.block) continue;
@@ -256,7 +274,7 @@ export function updatePedestrians(state, dt, events) {
     ped.x = point.x;
     ped.y = point.y;
     ped.angle = ped.dir > 0 ? point.angle : point.angle + Math.PI;
-    ped.phase += dt * 7 * (ped.stride ?? 1);
+    stepPhase(ped, dt, 7);
   }
   // Bodies whose linger ran out leave the street.
   state.peds = state.peds.filter((p) => !p.dead || p.down > 0);

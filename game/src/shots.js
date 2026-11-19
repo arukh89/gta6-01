@@ -10,7 +10,8 @@ import { STEP } from './config.js';
 import { createCar, playerCar } from './player.js';
 import { pedLookForIndex } from './pedestrians.js';
 import { spawnHelicopter } from './police.js';
-import { startCrewJob, startCurrentMission } from './missions.js';
+import { startCurrentMission } from './missions.js';
+import { startCrewJob } from './missions.js';
 import { loadRecordToLive } from './characters.js';
 import { spawnMuzzle } from './effects.js';
 
@@ -83,14 +84,34 @@ function idleWorld(state, stepper, seconds) {
  * one fixed step with scripted input. Returns the screen the loop should
  * show: 'title' for the start scene, 'play' for the rest.
  */
+/** Bring a named local into a shot: put them on the block nearest a
+ * point, strolling slowly, so the frame catches them. Their loop is the
+ * block whose centre is nearest the point. */
+function bringNamedIntoFrame(state, name, x, y, near) {
+  const local = state.peds.find((p) => p.name === name);
+  if (!local || !near.length) return;
+  let bestBlock = near[0];
+  let bestD = Infinity;
+  for (const b of near) {
+    const d = Math.hypot(b.x + b.w / 2 - x, b.y + b.h / 2 - y);
+    if (d < bestD) { bestD = d; bestBlock = b; }
+  }
+  local.block = bestBlock;
+  local.x = x;
+  local.y = y;
+  local.t = 0.05;
+  local.dir = 1;
+  local.speed = 20;
+}
+
 export function stageShot(name, state, stepper) {
   const events = [];
   if (name === 'chase') {
-    // Golden-hour chase west across the Coral Bridge: 173 km/h, HEAT —
-    // five stars plus the sixth red star — six cruisers behind and the
-    // police helicopter overhead with its searchlight sweeping the
-    // street. The car ends ON the landmark bridge (x≈1920, y=800), so
-    // the gold deck and the river on both sides are the cover's stars.
+    // Golden-hour chase, westbound across the Coral Bridge: 173 km/h,
+    // HEAT — five stars plus the sixth red star — six cruisers behind
+    // and the police helicopter overhead with its searchlight sweeping
+    // the street. The car ends ON the landmark bridge (x≈1920, y=800),
+    // so the gold deck and the river on both sides are the cover's stars.
     state.player.money = 1250;
     state.player.health = 100;
     state.progress.rep = 120;
@@ -105,10 +126,10 @@ export function stageShot(name, state, stepper) {
     // the staged drive, so the step cannot complete during staging.
     state.mission.stepIndex = 1;
     // The Getaway's onStart raises three stars, and the cruisers it
-    // spawns sit on the road ahead of a westbound car (eastbound they
-    // were harmlessly behind). Clear them and pin the heat to zero for
-    // the drive, so the run to the bridge is clean; the staged formation
-    // below supplies the chase, and the heat is pinned after it.
+    // spawns end up on the road ahead of a westbound car (eastbound
+    // they were harmlessly behind). Clear them and pin the heat to zero
+    // for the drive, so the run to the bridge is clean; the staged
+    // formation below supplies the chase, and the heat is pinned after it.
     state.cars = state.cars.filter((c) => c.driver !== 'police');
     state.wanted.level = 0;
     clearCorridor(state, 800, 1200, 3150);
@@ -158,6 +179,8 @@ export function stageShot(name, state, stepper) {
     const near = state.city.blocks.filter((b) => Math.abs(b.x + b.w / 2 - 2760) < 500 && Math.abs(b.y + b.h / 2 - 1760) < 400);
     const shirts = ['#e63946', '#2a9d8f', '#ffb703', '#8ecae6', '#90be6d', '#b5838d'];
     for (let i = 0; i < 6 && near.length; i += 1) {
+      // Staged walkers get hashed looks from a far index band (200+),
+      // so they never collide with the city's own peds.
       state.peds.push({
         kind: 'ped',
         block: near[i % near.length],
@@ -178,21 +201,7 @@ export function stageShot(name, state, stepper) {
     }
     // Dedi the fisherman works the marina: bring him into the frame,
     // strolling slowly by the crate, so the shot shows a named local.
-    const fisherman = state.peds.find((p) => p.name === 'Dedi');
-    if (fisherman && near.length) {
-      let bestBlock = near[0];
-      let bestD = Infinity;
-      for (const b of near) {
-        const d = Math.hypot(b.x + b.w / 2 - 2900, b.y + b.h / 2 - 1720);
-        if (d < bestD) { bestD = d; bestBlock = b; }
-      }
-      fisherman.block = bestBlock;
-      fisherman.x = 2900;
-      fisherman.y = 1720;
-      fisherman.t = 0.05;
-      fisherman.dir = 1;
-      fisherman.speed = 20;
-    }
+    bringNamedIntoFrame(state, 'Dedi', 2900, 1720, near);
     idleWorld(state, stepper, 2);
     return 'play';
   }
@@ -208,6 +217,8 @@ export function stageShot(name, state, stepper) {
     state.progress.stamina = 45;
     state.stats.missionsDone = 4;
     state.stats.racesWon = 1;
+    // One crew job done (Shadow Run), safehouse unlocked — so the map
+    // shot shows the CREW JOBS section with a tick on it.
     state.stats.crewDone = 1;
     state.progress.safehouse = true;
     state.crewJob.done = [0];
@@ -215,9 +226,9 @@ export function stageShot(name, state, stepper) {
     // Medals on the four finished jobs, so the map shot shows the medal
     // column and the Replay buttons — the completion story in one frame.
     state.progress.medals = { 0: 'gold', 1: 'silver', 2: 'gold', 3: 'bronze' };
-    // Lena herself, ON the Coral Bridge (Coral Boulevard, y=800) facing
-    // east, so the new player arrow sits on the landmark bridge itself
-    // in the map shot — the river and the gold deck behind it.
+    // Lena herself, ON the Coral Bridge (Coral Boulevard, y=800) and
+    // facing east, so the player arrow sits on the landmark bridge
+    // itself in the map shot — the river and the gold deck behind it.
     state.player.x = 1920;
     state.player.y = 800;
     state.player.angle = 0;

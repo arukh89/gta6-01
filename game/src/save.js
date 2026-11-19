@@ -60,6 +60,8 @@ export function writeSave(state, seed) {
       wanted: state.wanted.level,
       heat: state.wanted.heat,
       completedMissions: [...state.mission.completed],
+      // Crew jobs ride along: which of the four are done, and how many
+      // the counter shows — so a loaded game keeps its board progress.
       crewDone: [...(state.crewJob ? state.crewJob.done : [])],
       crewJobsDone: state.stats.crewDone || 0,
       medals: { ...state.progress.medals },
@@ -107,7 +109,8 @@ export function applySave(state, data) {
     ? data.completedMissions
     : Array.from({ length: data.missionIndex || 0 }, (_, i) => i);
   state.mission.briefPending = !state.mission.done;
-  // Crew jobs (version 2 saves carry them; older saves start fresh).
+  // Crew jobs: version-2 saves carry them, older saves start fresh —
+  // a missing list just means no crew job was ever finished.
   if (state.crewJob) state.crewJob.done = Array.isArray(data.crewDone) ? [...data.crewDone] : [];
   state.stats.crewDone = data.crewJobsDone || 0;
   state.progress.medals = data.medals || {};
