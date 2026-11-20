@@ -48,7 +48,7 @@ const MAX_FRAME = 0.25;
 const params = new URLSearchParams(window.location.search);
 const shot = params.get('shot');
 const seedParam = Number.parseInt(params.get('seed') ?? '', 10);
-const seed = Number.isInteger(seedParam) ? seedParam : Math.floor(Math.random() * 4294967296);
+let seed = Number.isInteger(seedParam) ? seedParam : Math.floor(Math.random() * 4294967296);
 
 const canvas = document.getElementById('game');
 const statusEl = document.getElementById('status');
@@ -434,7 +434,20 @@ function confirmSelect() {
 
 function startContinued() {
   const data = readSave();
-  if (data) applySave(state, data);
+  if (data) {
+    // The city is seed-dependent (buildings, cash drops, tapes), so
+    // Continue must rebuild the state from the SAVED seed — otherwise the
+    // save is patched onto a boot state built from a fresh random seed and
+    // the player wakes up in a different city with the wrong collectibles
+    // marked taken. The module seed is re-pointed too, so a later save
+    // stores the city the player is actually in. A save without a seed
+    // (older saves) keeps the old behaviour: patch onto the boot state.
+    if (Number.isInteger(data.seed)) {
+      seed = data.seed >>> 0;
+      state = createGameState(createSeededRandom(seed), createSeededRandom((seed ^ 0x5f3759df) >>> 0));
+    }
+    applySave(state, data);
+  }
   screenRef.current = 'play';
   showOnly(null);
   hud.show();

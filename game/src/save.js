@@ -54,6 +54,11 @@ export function writeSave(state, seed) {
       safehouse: state.progress.safehouse,
       garage: state.progress.garage,
       clockMinutes: state.clockMinutes,
+      // Total minutes drive the once-a-day car sale and the property
+      // payout day-boundary; without it a load resets the clock to 0 and
+      // locks the sale out for hours. Old saves have no key and default
+      // to 0 below, which is the previous behaviour.
+      totalMinutes: state.totalMinutes,
       cashTaken: state.city.cashDrops.map((d) => d.taken),
       tapesTaken: state.city.tapes.map((t) => t.taken),
       // Loading keeps the heat: a save never wipes the wanted level.
@@ -83,6 +88,14 @@ export function readSave() {
     if (!raw) return null;
     const data = JSON.parse(raw);
     if (!data || (data.version !== 1 && data.version !== 2)) return null;
+    // A save missing its core fields (or holding non-numbers there) is
+    // too corrupt to trust — treat it as no save rather than loading
+    // undefined money/position into NaN. applySave still defaults these
+    // fields as a second layer, for any caller that builds a data object
+    // by hand.
+    const finiteNumber = (v) => typeof v === 'number' && Number.isFinite(v);
+    if (!finiteNumber(data.money) || !finiteNumber(data.health)
+      || !finiteNumber(data.x) || !finiteNumber(data.y)) return null;
     return data;
   } catch {
     return null;
@@ -91,11 +104,15 @@ export function readSave() {
 
 export function applySave(state, data) {
   const player = state.player;
-  player.money = data.money;
-  player.health = data.health;
+  // Core fields default instead of landing as undefined: a partial or
+  // hand-edited save must load into a playable state, never NaN.
+  // (readSave already rejects saves missing these, so this is the second
+  // layer — it also guards any caller that builds a data object by hand.)
+  player.money = data.money ?? 0;
+  player.health = data.health ?? 100;
   player.armour = data.armour ?? 0;
-  player.x = data.x;
-  player.y = data.y;
+  player.x = data.x ?? state.city.spawn.x;
+  player.y = data.y ?? state.city.spawn.y;
   player.weapon = data.weapon || 'fists';
   player.weapons = Array.isArray(data.weapons) && data.weapons.length ? data.weapons : ['fists', 'pistol'];
   if (!player.weapons.includes(player.weapon)) player.weapon = 'fists';
@@ -136,6 +153,10 @@ export function applySave(state, data) {
   state.progress.safehouse = Boolean(data.safehouse);
   state.progress.garage = Boolean(data.garage);
   state.clockMinutes = data.clockMinutes || state.clockMinutes;
+  // Total minutes are restored so the once-a-day sale and the property
+  // payout keep their place across a load; old saves have no key and
+  // start at 0, which is the previous behaviour.
+  state.totalMinutes = Number.isFinite(data.totalMinutes) ? data.totalMinutes : 0;
   if (Array.isArray(data.cashTaken)) {
     data.cashTaken.forEach((taken, i) => {
       if (state.city.cashDrops[i]) state.city.cashDrops[i].taken = Boolean(taken);
