@@ -353,9 +353,13 @@ export function updatePolice(state, dt, events) {
     // The helicopter watches from above but does not count for `seen`:
     // its spotlight marks the spot, the ground units do the seeing.
     let seen = false;
-    if (nearestCar && nearest < WANTED.witnessPoliceRadius
-      && hasLineOfSight(state.city, nearestCar.x, nearestCar.y, player.x, player.y)) {
-      seen = true;
+    for (const car of cops) {
+      const d = Math.hypot(car.x - player.x, car.y - player.y);
+      if (d < WANTED.witnessPoliceRadius
+        && hasLineOfSight(state.city, car.x, car.y, player.x, player.y)) {
+        seen = true;
+        break;
+      }
     }
     if (!seen) {
       for (const ped of state.peds) {

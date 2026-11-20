@@ -228,7 +228,7 @@ export function updateDriving(state, input, dt, onCrash, events) {
   const topSpeed = spec.top * (1 + 0.015 * driveLv) * (boosting ? 1.35 : 1) * wear;
   if (throttle > 0) car.speed += spec.accel * wear * throttle * dt;
   else if (throttle < 0) {
-    car.speed += (car.speed > 5 ? -DRIVE.brake : DRIVE.accel * 0.6) * dt * (car.speed > 5 ? 1 : -throttle);
+    car.speed += (car.speed > 5 ? -DRIVE.brake : DRIVE.accel * 0.6) * dt * (car.speed > 5 ? 1 : throttle);
     if (car.speed < -DRIVE.reverse) car.speed = -DRIVE.reverse;
   } else {
     car.speed -= car.speed * (wrecked ? 2.5 : 0.7) * dt;

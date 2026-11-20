@@ -17,7 +17,7 @@ export function sellCar(state, events) {
   if (!car || !state.progress.garage) return 'Drive a car to the garage to sell it.';
   if (!car.stolen) return 'Only borrowed cars can be sold here.';
   if (state.totalMinutes - state.progress.lastSellAt < 1440) return 'The garage only buys one car a day.';
-  const value = SELL_VALUES[car.kind] || 250;
+  const value = SELL_VALUES[car.kind] ?? 250;
   state.cars = state.cars.filter((c) => c !== car);
   player.onFoot = true;
   player.carId = null;

@@ -72,6 +72,7 @@ export function writeSave(state, seed) {
       medals: { ...state.progress.medals },
       property: state.progress.property,
       lastSellAt: state.progress.lastSellAt,
+    lastDartsAt: state.progress.lastDartsAt,
       snacks: state.player.snacks || 0,
       eventsSolved: state.stats.eventsSolved || 0,
     };
@@ -133,6 +134,7 @@ export function applySave(state, data) {
   state.progress.medals = data.medals || {};
   state.progress.property = Boolean(data.property);
   state.progress.lastSellAt = typeof data.lastSellAt === 'number' ? data.lastSellAt : -1e9;
+  state.progress.lastDartsAt = typeof data.lastDartsAt === 'number' ? data.lastDartsAt : -1e9;
   player.snacks = data.snacks || 0;
   state.stats.eventsSolved = data.eventsSolved || 0;
   // The heat survives a load: the police do not forget a save.

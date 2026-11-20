@@ -170,7 +170,7 @@ export function updateCombat(state, input, dt, events, toWorld) {
       if (ped.kind !== 'cop' || ped.down > 0) continue;
       const d = Math.hypot(ped.x - player.x, ped.y - player.y);
       const interval = ped.swat ? 1.0 : 1.4;
-      if (d < 260 && d > 40 && state.time - (ped.lastShot || -99) > interval) {
+      if (d < 260 && d > 40 && state.time - (ped.lastShot || -99) > interval && hasLineOfSight(state.city, ped.x, ped.y, player.x, player.y)) {
         ped.lastShot = state.time;
         damagePlayer(state, ped.swat ? 14 : 9, events);
         events.push({ type: 'shot' });

@@ -33,6 +33,7 @@ export function createProgress() {
     // The Neon Club: owned property, pays $120 per game day.
     property: false,
     lastSellAt: -1e9,
+    lastDartsAt: -1e9,
   };
 }
 

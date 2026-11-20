@@ -150,7 +150,7 @@ function computePrompt() {
 }
 
 function sellValue(car) {
-  return SELL_VALUES[car.kind] || 250;
+  return SELL_VALUES[car.kind] ?? 250;
 }
 
 function handleEvents(events, screen) {
@@ -343,8 +343,13 @@ function sleepAtSafehouse() {
     hud.toast('Sleep at the safehouse.', 2.5);
     return;
   }
+  const beforeDay = Math.floor(state.totalMinutes / (24 * 60));
   state.clockMinutes = (state.clockMinutes + 480) % (24 * 60);
   state.totalMinutes += 480;
+  if (state.progress.property && Math.floor(state.totalMinutes / (24 * 60)) > beforeDay) {
+    state.player.money += state.city.property.income;
+    hud.toast('Property income collected.', 2.5);
+  }
   player.health = HEALTH.max;
   writeSave(state, seed);
   hud.toast('You slept 8 hours — rested, saved, and the city moved on.', 3.5);

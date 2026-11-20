@@ -62,6 +62,15 @@ export function rangeTargetSpots(state) {
 function finishGame(state, events, text) {
   const mg = state.minigame;
   const pay = mg.kind === 'range' ? rangePayout(mg.targets.filter((t) => t.down).length) : payout(mg.score);
+  if (mg.kind === 'darts') {
+    if (state.totalMinutes - state.progress.lastDartsAt < 1440) {
+      pay.money = 0;
+      pay.rep = 0;
+      events.push({ type: 'toast', text: "Today's darts winnings are already collected." });
+    } else {
+      state.progress.lastDartsAt = state.totalMinutes;
+    }
+  }
   state.player.money += pay.money;
   state.progress.rep += pay.rep;
   if (pay.money > 0) {
